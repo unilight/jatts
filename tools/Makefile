@@ -36,6 +36,8 @@ endif
 
 jatts.done: virtualenv.done pytorch.done
 	. venv/bin/activate; cd ../; pip install -e .
+	. venv/bin/activate; cd ../; pip install git+https://github.com/speechbrain/speechbrain.git@develop
+	. venv/bin/activate; cd ../; pip install git+https://github.com/rinnakk/nue-asr.git
 	touch jatts.done
 
 apex.done: virtualenv.done pytorch.done

@@ -47,6 +47,7 @@ def find_files(root_dir, query="*.wav", include_root_dir=True):
 
     return files
 
+
 def read_csv(path, dict_reader=False, lazy=False):
     """
 
@@ -81,6 +82,22 @@ def read_csv(path, dict_reader=False, lazy=False):
             contents = [line for line in reader]
 
     return contents, fieldnames
+
+
+def write_csv(data, path):
+    """Write data to the output path.
+
+    Args:
+        path (str): path to the output csv file
+        data (list): a list of dicts
+
+    """
+    fieldnames = list(data[0].keys())
+    with open(path, "w", newline="") as csvfile:
+        writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+        writer.writeheader()
+        for line in data:
+            writer.writerow(line)
 
 
 def read_hdf5(hdf5_name, hdf5_path):
@@ -154,6 +171,7 @@ def write_hdf5(hdf5_name, hdf5_path, write_data, is_overwrite=True):
     hdf5_file.create_dataset(hdf5_path, data=write_data)
     hdf5_file.flush()
     hdf5_file.close()
+
 
 def load_model(checkpoint, config, stats=None):
     """Load trained model.
