@@ -35,10 +35,9 @@ class FastSpeech2Trainer(Trainer):
         durations = batch["durations"].to(self.device)
         duration_lens = batch["duration_lens"].to(self.device)
 
-        if "spkembs" in batch:
+        spkembs = batch["spkembs"] # if no spkembs, this is default set to None by collator
+        if spkembs is not None:
             spkembs = batch["spkembs"].to(self.device)
-        else:
-            spkembs = None
 
         # model forward
         ret = self.model(xs, ilens, ys, olens, durations, duration_lens, pitches, pitch_lengths, energys, energy_lengths, spkembs)
@@ -150,10 +149,11 @@ class FastSpeech2Trainer(Trainer):
         ilens = batch["ilens"].to(self.device)
         olens = batch["olens"].to(self.device)
 
-        if "spkembs" in batch:
+        spkembs = batch["spkembs"] # if no spkembs, this is default set to None by collator
+        if spkembs is not None:
             spkembs = batch["spkembs"].to(self.device)
         else:
-            spkembs = None
+            spkembs = [None for _ in range(xs.shape[0])] # this is because we need to iterate over spkembs
 
         # generate
         for idx, (x, y, ilen, olen, spkemb) in enumerate(zip(xs, ys, ilens, olens, spkembs)):

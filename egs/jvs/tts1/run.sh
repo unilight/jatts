@@ -164,7 +164,7 @@ if [ "${stage}" -le 2 ] && [ "${stop_stage}" -ge 2 ]; then
         generate_token_list.py \
             --csv "data/${train_set}.csv" \
             --out "${token_list}" \
-            --column "${column}" \
+            --column "${token_column}" \
             --non_linguistic_symbols "${nlsyms_txt}" \
             --cleaner "${cleaner}" \
             --add_symbol "${blank}:0" \

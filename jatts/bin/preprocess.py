@@ -180,7 +180,7 @@ def main():
             duration = None
 
         audio, fs = librosa.load(
-            item["wav_path"], sr=None, offset=offset, duration=duration
+            item["wav_path"], sr=config["sampling_rate"], offset=offset, duration=duration
         )
 
         # check

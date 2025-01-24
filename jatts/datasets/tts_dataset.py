@@ -92,10 +92,11 @@ class TTSDataset(Dataset):
         # load and process text
         text = item[self.token_column]
         if self.token_column == "phonemes":
-            tokens = text.split(" ")
+            tokens = [p for p in text.split(" ") if p != ""]
         token_indices = np.array(
             self.token_id_converter.tokens2ids(tokens), dtype=np.int64
         )
+        item["tokens"] = tokens
         item["token_indices"] = token_indices
 
         # load durations (in training)

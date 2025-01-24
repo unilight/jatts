@@ -12,9 +12,9 @@ from speechbrain.inference.speaker import EncoderClassifier
 
 
 class SpeechBrainSpkEmbExtractor:
-    def __init__(self):
+    def __init__(self, device="cpu"):
         self.classifier = EncoderClassifier.from_hparams(
-            source="speechbrain/spkrec-ecapa-voxceleb"
+            source="speechbrain/spkrec-ecapa-voxceleb", run_opts={"device": device}
         )
 
     def forward(

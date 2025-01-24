@@ -16,11 +16,11 @@ import pyopenjtalk
 import torch
 import torchaudio
 import yaml
+from jatts.evaluate.dtw_based import calculate_mcd_f0
+from jatts.modules.feature_extract.spkemb_speechbrain import SpeechBrainSpkEmbExtractor
+from jatts.utils import read_csv
 from tqdm import tqdm
 from transformers import WhisperForConditionalGeneration, WhisperProcessor
-
-from jatts.evaluate.dtw_based import calculate_mcd_f0
-from jatts.utils import read_csv
 
 
 def load_asr_model(device):
@@ -172,11 +172,30 @@ def main():
     ##############################
 
     print("Calculating ASR-based score...")
+
     # load ASR model
     asr_model = load_asr_model(device)
 
     # calculate error rates
     ers, cer, wer = _calculate_asr_score(asr_model, device, dataset, args.wavdir)
+
+    ##############################
+    print("Calculating speaker embedding cosine similarity...")
+
+    # load speaker embedding model
+    spkemb_extractor = SpeechBrainSpkEmbExtractor(device)
+
+    # calculate scores
+    spkemb_sim_scores = {}
+    for item in tqdm(dataset):
+        generated_wav_path = os.path.join(args.wavdir, item["sample_id"] + ".wav")
+        gt_wav_path = item["ref_wav_path"]
+        generated_wav_spkemb = spkemb_extractor.forward(generated_wav_path)
+        gt_wav_spkemb = spkemb_extractor.forward(gt_wav_path)
+        sim = np.inner(generated_wav_spkemb, gt_wav_spkemb) / (
+            np.linalg.norm(generated_wav_spkemb) * np.linalg.norm(gt_wav_spkemb)
+        )
+        spkemb_sim_scores[item["sample_id"]] = sim
 
     ##############################
 
@@ -225,19 +244,21 @@ def main():
             d["CER"] = ers[result[0]][0]
             d["GT_TRANSCRIPTION"] = ers[result[0]][2]
             d["CV_TRANSCRIPTION"] = ers[result[0]][3]
+            d["SPKEMB_SIM_SCORE"] = spkemb_sim_scores[result[0]]
             d["SHEET_SCORE"] = sheet_scores[result[0]]
             results.append(d)
 
     # utterance wise result
     for result in results:
         print(
-            "{} {:.2f} {:.2f} {:.2f} {:.2f} {:.2f} {:.1f} \t{} | {}".format(
+            "{} {:.2f} {:.2f} {:.2f} {:.2f} {:.2f} {:.3f} {:.1f} \t{} | {}".format(
                 result["basename"],
                 result["MCD"],
                 result["F0RMSE"],
                 result["F0CORR"],
                 result["DDUR"],
                 result["SHEET_SCORE"],
+                result["SPKEMB_SIM_SCORE"],
                 result["CER"],
                 result["GT_TRANSCRIPTION"],
                 result["CV_TRANSCRIPTION"],
@@ -250,11 +271,14 @@ def main():
     mf0CORR = np.mean(np.array([result["F0CORR"] for result in results]))
     mDDUR = np.mean(np.array([result["DDUR"] for result in results]))
     mSHEET_SCORE = np.mean(np.array([result["SHEET_SCORE"] for result in results]))
+    mSPKEMB_SIM_SCORE = np.mean(
+        np.array([result["SPKEMB_SIM_SCORE"] for result in results])
+    )
     mCER = cer
 
     print(
-        "Mean MCD, f0RMSE, f0CORR, DDUR, SHEET_SCORE, CER: {:.2f} {:.2f} {:.3f} {:.3f} {:.2f} {:.1f}".format(
-            mMCD, mf0RMSE, mf0CORR, mDDUR, mSHEET_SCORE, mCER
+        "Mean MCD, f0RMSE, f0CORR, DDUR, SHEET SCORE, SPKEMB SIM, CER: {:.2f} {:.2f} {:.3f} {:.3f} {:.2f} {:.2f} {:.1f}".format(
+            mMCD, mf0RMSE, mf0CORR, mDDUR, mSHEET_SCORE, mSPKEMB_SIM_SCORE, mCER
         )
     )
 
