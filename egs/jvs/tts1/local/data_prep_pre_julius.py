@@ -4,7 +4,7 @@ import argparse
 import csv
 import os
 
-from jatts.utils.utils import read_csv
+from jatts.utils.utils import read_csv, write_csv
 
 SET_MAPPING = {"parallel": "parallel100", "nonparallel": "nonpara30"}
 
@@ -52,12 +52,10 @@ if __name__ == "__main__":
         # override wav_path to absolute path
         new_data["wav_path"] = os.path.join(args.db_root, item["wav_path"])
 
+        # write spk
+        new_data["spk"] = spk
+
         data.append(new_data)
 
     # write to out
-    fieldnames = list(data[0].keys())
-    with open(args.out, "w", newline="") as csvfile:
-        writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
-        writer.writeheader()
-        for line in data:
-            writer.writerow(line)
+    write_csv(data, args.out)

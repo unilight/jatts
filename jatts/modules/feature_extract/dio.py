@@ -43,8 +43,6 @@ class Dio:
         fs: int = 22050,
         n_fft: int = 1024,
         hop_length: int = 256,
-        f0min: int = 80,
-        f0max: int = 400,
         use_token_averaged_f0: bool = True,
         use_continuous_f0: bool = True,
         use_log_f0: bool = True,
@@ -55,8 +53,6 @@ class Dio:
         self.n_fft = n_fft
         self.hop_length = hop_length
         self.frame_period = 1000 * hop_length / fs
-        self.f0min = f0min
-        self.f0max = f0max
         self.use_token_averaged_f0 = use_token_averaged_f0
         self.use_continuous_f0 = use_continuous_f0
         self.use_log_f0 = use_log_f0
@@ -72,8 +68,6 @@ class Dio:
             fs=self.fs,
             n_fft=self.n_fft,
             hop_length=self.hop_length,
-            f0min=self.f0min,
-            f0max=self.f0max,
             use_token_averaged_f0=self.use_token_averaged_f0,
             use_continuous_f0=self.use_continuous_f0,
             use_log_f0=self.use_log_f0,
@@ -83,12 +77,14 @@ class Dio:
     def forward(
         self,
         input: np.array,
+        f0min: int = 80,
+        f0max: int = 400,
         feat_length: int = None,
         durations: np.array = None,
     ) -> np.array:
 
         # F0 extraction
-        pitch = self._calculate_f0(input)
+        pitch = self._calculate_f0(input, f0min, f0max)
 
         # (Optional): Adjust length to match with the mel-spectrogram
         if feat_length is not None:
@@ -102,13 +98,13 @@ class Dio:
         # Return with the shape (B, T, 1)
         return pitch
 
-    def _calculate_f0(self, input):
+    def _calculate_f0(self, input, f0min, f0max):
         x = input.astype(np.double)
         f0, timeaxis = pyworld.dio(
             x,
             self.fs,
-            f0_floor=self.f0min,
-            f0_ceil=self.f0max,
+            f0_floor=f0min,
+            f0_ceil=f0max,
             frame_period=self.frame_period,
         )
         f0 = pyworld.stonemask(x, f0, timeaxis, self.fs)

@@ -1,0 +1,300 @@
+jvs001:
+  f0max: 300
+  f0min: 70
+jvs002:
+  f0max: 390
+  f0min: 130
+jvs003:
+  f0max: 275
+  f0min: 70
+jvs004:
+  f0max: 430
+  f0min: 130
+jvs005:
+  f0max: 285
+  f0min: 70
+jvs006:
+  f0max: 190
+  f0min: 70
+jvs007:
+  f0max: 390
+  f0min: 125
+jvs008:
+  f0max: 400
+  f0min: 115
+jvs009:
+  f0max: 235
+  f0min: 70
+jvs010:
+  f0max: 480
+  f0min: 125
+jvs011:
+  f0max: 310
+  f0min: 70
+jvs012:
+  f0max: 240
+  f0min: 70
+jvs013:
+  f0max: 290
+  f0min: 70
+jvs014:
+  f0max: 470
+  f0min: 130
+jvs015:
+  f0max: 435
+  f0min: 130
+jvs016:
+  f0max: 340
+  f0min: 110
+jvs017:
+  f0max: 390
+  f0min: 120
+jvs018:
+  f0max: 380
+  f0min: 115
+jvs019:
+  f0max: 410
+  f0min: 125
+jvs020:
+  f0max: 280
+  f0min: 70
+jvs021:
+  f0max: 220
+  f0min: 70
+jvs022:
+  f0max: 250
+  f0min: 70
+jvs023:
+  f0max: 260
+  f0min: 70
+jvs024:
+  f0max: 440
+  f0min: 130
+jvs025:
+  f0max: 370
+  f0min: 115
+jvs026:
+  f0max: 450
+  f0min: 130
+jvs027:
+  f0max: 400
+  f0min: 120
+jvs028:
+  f0max: 280
+  f0min: 70
+jvs029:
+  f0max: 360
+  f0min: 120
+jvs030:
+  f0max: 420
+  f0min: 130
+jvs031:
+  f0max: 290
+  f0min: 70
+jvs032:
+  f0max: 335
+  f0min: 70
+jvs033:
+  f0max: 250
+  f0min: 70
+jvs034:
+  f0max: 250
+  f0min: 70
+jvs035:
+  f0max: 360
+  f0min: 110
+jvs036:
+  f0max: 440
+  f0min: 135
+jvs037:
+  f0max: 240
+  f0min: 70
+jvs038:
+  f0max: 410
+  f0min: 130
+jvs039:
+  f0max: 430
+  f0min: 120
+jvs040:
+  f0max: 430
+  f0min: 120
+jvs041:
+  f0max: 300
+  f0min: 70
+jvs042:
+  f0max: 220
+  f0min: 70
+jvs043:
+  f0max: 350
+  f0min: 120
+jvs044:
+  f0max: 240
+  f0min: 70
+jvs045:
+  f0max: 280
+  f0min: 70
+jvs046:
+  f0max: 290
+  f0min: 70
+jvs047:
+  f0max: 330
+  f0min: 70
+jvs048:
+  f0max: 240
+  f0min: 70
+jvs049:
+  f0max: 250
+  f0min: 70
+jvs050:
+  f0max: 300
+  f0min: 70
+jvs051:
+  f0max: 420
+  f0min: 130
+jvs052:
+  f0max: 300
+  f0min: 70
+jvs053:
+  f0max: 420
+  f0min: 125
+jvs054:
+  f0max: 320
+  f0min: 70
+jvs055:
+  f0max: 410
+  f0min: 120
+jvs056:
+  f0max: 410
+  f0min: 120
+jvs057:
+  f0max: 410
+  f0min: 120
+jvs058:
+  f0max: 420
+  f0min: 110
+jvs059:
+  f0max: 420
+  f0min: 115
+jvs060:
+  f0max: 440
+  f0min: 130
+jvs061:
+  f0max: 470
+  f0min: 140
+jvs062:
+  f0max: 390
+  f0min: 115
+jvs063:
+  f0max: 390
+  f0min: 130
+jvs064:
+  f0max: 350
+  f0min: 120
+jvs065:
+  f0max: 470
+  f0min: 120
+jvs066:
+  f0max: 480
+  f0min: 120
+jvs067:
+  f0max: 450
+  f0min: 120
+jvs068:
+  f0max: 260
+  f0min: 70
+jvs069:
+  f0max: 420
+  f0min: 120
+jvs070:
+  f0max: 290
+  f0min: 70
+jvs071:
+  f0max: 230
+  f0min: 70
+jvs072:
+  f0max: 420
+  f0min: 125
+jvs073:
+  f0max: 280
+  f0min: 70
+jvs074:
+  f0max: 280
+  f0min: 70
+jvs075:
+  f0max: 300
+  f0min: 70
+jvs076:
+  f0max: 290
+  f0min: 70
+jvs077:
+  f0max: 280
+  f0min: 70
+jvs078:
+  f0max: 220
+  f0min: 70
+jvs079:
+  f0max: 240
+  f0min: 70
+jvs080:
+  f0max: 300
+  f0min: 70
+jvs081:
+  f0max: 250
+  f0min: 70
+jvs082:
+  f0max: 380
+  f0min: 115
+jvs083:
+  f0max: 420
+  f0min: 135
+jvs084:
+  f0max: 400
+  f0min: 115
+jvs085:
+  f0max: 410
+  f0min: 125
+jvs086:
+  f0max: 290
+  f0min: 70
+jvs087:
+  f0max: 300
+  f0min: 70
+jvs088:
+  f0max: 260
+  f0min: 70
+jvs089:
+  f0max: 240
+  f0min: 70
+jvs090:
+  f0max: 390
+  f0min: 140
+jvs091:
+  f0max: 330
+  f0min: 115
+jvs092:
+  f0max: 380
+  f0min: 110
+jvs093:
+  f0max: 470
+  f0min: 130
+jvs094:
+  f0max: 390
+  f0min: 125
+jvs095:
+  f0max: 370
+  f0min: 125
+jvs096:
+  f0max: 410
+  f0min: 135
+jvs097:
+  f0max: 305
+  f0min: 70
+jvs098:
+  f0max: 340
+  f0min: 70
+jvs099:
+  f0max: 300
+  f0min: 70
+jvs100:
+  f0max: 240
+  f0min: 70

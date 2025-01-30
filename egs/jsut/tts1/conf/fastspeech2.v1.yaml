@@ -12,14 +12,13 @@ fmin: 80                 # Minimum freq in mel basis calculation.
 fmax: 7600               # Maximum frequency in mel basis calculation.
 global_gain_scale: 1.0   # Will be multiplied to all of waveform.
 
-feat_list: ["mel", "spkemb", "pitch", "energy"]
+feat_list: ["mel", "pitch", "energy"]
 out_feat_type: mel
 
 pitch_extract_type: dio             # pitch extractor type
 pitch_extract_f0min: 40             # default f0min (if f0.yaml not provided)
 pitch_extract_f0max: 400            # default f0max (if f0.yaml not provided)
 energy_extract_type: energy         # energy extractor type
-spkemb_extract_type: speechbrain    # speaker embedding extractor type
 
 ###########################################################
 #              NETWORK ARCHITECTURE SETTING               #
@@ -78,8 +77,6 @@ model_params:
     energy_embed_kernel_size: 1                # kernel size of conv embedding layer for energy
     energy_embed_dropout: 0.0                  # dropout rate after conv embedding layer for energy
     stop_gradient_from_energy_predictor: false # whether to stop the gradient from energy predictor to encoder
-    spk_embed_dim: 192                         # dimension of speaker embedding
-    spk_embed_integration_type: add            # how to integrate speaker embedding
 
 ###########################################################
 #                      LOSS SETTING                       #
@@ -97,9 +94,9 @@ criterions:
 #                   INFERENCE SETTING                     #
 ###########################################################
 vocoder:
-    checkpoint: /data/group1/z44476r/Experiments/ParallelWaveGAN/egs/jvs/voc1/exp/train_hifigan.v1/checkpoint-2500000steps.pkl
-    config: /data/group1/z44476r/Experiments/ParallelWaveGAN/egs/jvs/voc1/exp/train_hifigan.v1/config.yml
-    stats: /data/group1/z44476r/Experiments/ParallelWaveGAN/egs/jvs/voc1/exp/train_hifigan.v1/stats.h5
+    checkpoint: ./downloads/hfg/checkpoint-2500000steps.pkl
+    config: ./downloads/hfg/config.yml
+    stats: ./downloads/hfg/stats.h5
 
 ###########################################################
 #                  DATA LOADER SETTING                    #

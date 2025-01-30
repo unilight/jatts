@@ -22,11 +22,14 @@ conf=conf/fastspeech2.v1.yaml
 
 # dataset configuration
 # db_root=downloads
-db_root=/data/group1/z44476r/Corpora/jvs_ver1
+db_root=/data/group1/z44476r/Corpora/jsut
 dumpdir=dump                # directory to dump full features
 
 # data preparation related
+num_dev=250
+num_test=250
 julius_clean=false
+create_histogram=false
 
 # text related setting
 token_type="phn"
@@ -55,7 +58,7 @@ checkpoint=""               # checkpoint path to be used for decoding
                             # (e.g. <path>/<to>/checkpoint-400000steps.pkl)
 
 # evaluation related setting
-eval_metrics="mcd sheet spkemb asr"
+eval_metrics="mcd sheet asr"
 
 # shellcheck disable=SC1091
 . utils/parse_options.sh || exit 1;
@@ -64,7 +67,7 @@ set -euo pipefail
 
 train_set="train"
 dev_set="dev"
-test_set="test_parallel_with_ref"
+test_set="test"
 
 token_listdir="${dumpdir}/token_list/${train_set}_${token_type}"
 if [ "${cleaner}" != none ]; then
@@ -76,30 +79,43 @@ fi
 token_list="${token_listdir}/tokens.txt"
 
 # ========================== Main stages start from here. ==========================
+
                                        
 if [ ${stage} -le -1 ] && [ ${stop_stage} -ge -1 ]; then
     log "stage -1: Data and pre-trained models downloading"
 
-    # TODO(unilight): implement this
-    local/data_download.sh ${db_root}
+    # local/download.sh ${db_root}
+
+    # download vocoder
+    mkdir -p "downloads/hfg"
+    cwd=$(pwd)
+    cd "downloads/hfg"
+    gdown 1_YIRiv8LxVFJVxhAZHrfxKPB966NyB6x # checkpoint
+    gdown 1i31eTGAi2AzYwmCWzoTAzSVcgKd2xw2P # config
+    gdown 1n9bRtCc7pSwHIG825Q0wRdjeS6lNuA3c # stats
+    cd ${cwd}
 fi
 
 if [ ${stage} -le 0 ] && [ ${stop_stage} -ge 0 ]; then
     log "stage 0: Data preparation"
 
-    for _set in "${train_set}" "${dev_set}" "${test_set}"; do
-        log "Preparing ${_set} set"
-        python local/data_prep_pre_julius.py \
-            --original_csv "data/original_csvs/${_set}.csv" \
-            --db_root "${db_root}" \
-            --out "data/${_set}.pre_julius.csv"
-    done
+    mkdir -p "data"
 
-    log "Run segmentation with Julius. This may take 15 minutes."
-    local/run_julius.sh \
-        --train_set "${train_set}" \
-        --dev_set "${dev_set}" \
-        --clean "${julius_clean}"
+    log "Making csv files"
+    python local/data_prep_pre_julius.py \
+        --train_set "${train_set}.pre_julius" \
+        --dev_set "${dev_set}.pre_julius" \
+        --test_set "${test_set}.pre_julius" \
+        --num_dev "${num_dev}" \
+        --num_test "${num_test}" \
+        --db_root "${db_root}/jsut_ver1.1" \
+        --outdir "data"
+
+    # log "Run segmentation with Julius. This may take 15 minutes."
+    # utils/run_julius.sh \
+    #     --train_set "${train_set}" \
+    #     --dev_set "${dev_set}" \
+    #     --clean "${julius_clean}"
 
     for _set in "${train_set}" "${dev_set}"; do
         log "Collecting Julius segmentation results for ${_set}"
@@ -115,10 +131,14 @@ if [ ${stage} -le 0 ] && [ ${stop_stage} -ge 0 ]; then
         --original_csv "data/${test_set}.pre_julius.csv" \
         --out "data/${test_set}.csv"
 
-    log "Prepare f0 range"
-    python local/prepare_f0_range.py \
-        --original_f0_path "${db_root}/gender_f0range.txt" \
-        --out "conf/f0.yaml"
+    if ${create_histogram}; then
+        log "create f0 historgram. See the progress via ${dumpdir}/${train_set}/create_histogram.log."
+        ${train_cmd} "${dumpdir}/${train_set}/create_histogram.log" \
+            create_histogram.py \
+                --csv "data/${train_set}.csv" \
+                --figure_dir "${dumpdir}/${train_set}"
+        log "Successfully finished calculation of statistics."
+    fi
 fi
 
 if [ "${stage}" -le 1 ] && [ "${stop_stage}" -ge 1 ]; then
@@ -252,7 +272,7 @@ if [ ${stage} -le 5 ] && [ ${stop_stage} -ge 5 ]; then
                 --csv "data/${test_set}.csv" \
                 --wavdir "${wavdir}" \
                 --f0_path "conf/f0.yaml" \
-                --metrics "${eval_metrics}"
+                --metrics ${eval_metrics}
         grep "INFO: Mean" "${outdir}/${name}/evaluation.log"
     done
 fi

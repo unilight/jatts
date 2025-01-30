@@ -55,6 +55,12 @@ def main():
         help="yaml format configuration file.",
     )
     parser.add_argument(
+        "--f0_path",
+        default=None,
+        type=str,
+        help="file storing f0 ranges"
+    )
+    parser.add_argument(
         "--verbose",
         type=int,
         default=1,
@@ -85,14 +91,15 @@ def main():
         config = yaml.load(f, Loader=yaml.Loader)
     config.update(vars(args))
 
-    # dataset = AudioSCPDataset(
-    #     args.wav_scp,
-    #     segments=args.segments,
-    #     return_utt_id=True,
-    #     return_sampling_rate=True,
-    # )
-
+    # read dataset
     dataset, _ = read_csv(args.csv, dict_reader=True)
+
+    # load f0min and f0 max if given
+    if args.f0_path is not None:
+        with open(args.f0_path, 'r') as f:
+            f0_all = yaml.load(f, Loader=yaml.FullLoader)
+    else:
+        f0_all=None
 
     # check directly existence
     if not os.path.exists(args.dumpdir):
@@ -110,8 +117,6 @@ def main():
                     fs=config["sampling_rate"],
                     n_fft=config["fft_size"],
                     hop_length=config["hop_size"],
-                    f0min=config["fmin"],
-                    f0max=config["fmax"],
                     use_token_averaged_f0=True,
                     use_continuous_f0=True,
                     use_log_f0=True,
@@ -247,8 +252,16 @@ def main():
                 ), f"{utt_id}: mel duration {feat.shape[0]} and phoneme durations {total_duration} don't match ."
 
             elif feat_type == "pitch":
+                if f0_all is not None:
+                    f0min = f0_all[item["spk"]]["f0min"]
+                    f0max = f0_all[item["spk"]]["f0max"]
+                else:
+                    f0min = config["pitch_extract_f0min"]
+                    f0max = config["pitch_extract_f0max"]
                 feat = extractor.forward(
                     audio,
+                    f0min=f0min,
+                    f0max=f0max,
                     feat_length=total_duration,
                     durations=np.array(phoneme_wise_durations),
                 )
