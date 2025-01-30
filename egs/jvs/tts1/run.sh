@@ -103,7 +103,7 @@ if [ ${stage} -le 0 ] && [ ${stop_stage} -ge 0 ]; then
 
     for _set in "${train_set}" "${dev_set}"; do
         log "Collecting Julius segmentation results for ${_set}"
-        python local/data_prep_post_julius.py \
+        python utils/data_prep_post_julius.py \
             --juliusdir "data/julius/tmp" \
             --conf "${conf}" \
             --original_csv "data/${_set}.pre_julius.csv" \
@@ -111,7 +111,7 @@ if [ ${stage} -le 0 ] && [ ${stop_stage} -ge 0 ]; then
     done
 
     log "Preparing ${test_set} set"
-    python local/data_prep_post_for_test_set.py \
+    python utils/data_prep_post_for_test_set.py \
         --original_csv "data/${test_set}.pre_julius.csv" \
         --out "data/${test_set}.csv"
 

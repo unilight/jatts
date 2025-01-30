@@ -1,4 +1,8 @@
 #!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
+# Copyright 2025 Wen-Chin Huang
+#  MIT License (https://opensource.org/licenses/MIT)
 
 """
 Data preparation script for JSUT.

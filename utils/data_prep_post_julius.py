@@ -39,7 +39,7 @@ def calculate_frames(wav_path, phoneme_intervals, hop_size, fs, frame_length):
     n_samples = len(
         librosa.load(
             wav_path,
-            sr=None,
+            sr=fs,
             offset=float(phoneme_intervals[0][0]),
             duration=float(phoneme_intervals[-1][1]) - float(phoneme_intervals[0][0]),
         )[0]
@@ -50,6 +50,7 @@ def calculate_frames(wav_path, phoneme_intervals, hop_size, fs, frame_length):
         expected_total_frames = math.floor(n_samples / hop_size) + 1
 
     adjustment = expected_total_frames - total_frames
+    assert adjustment >= 0, f"expected total frames ({expected_total_frames}) is smaller than total frames ({total_frames})"
     if adjustment > 0:
         frame_differences = [
             frames - (end - start) / frame_shift
