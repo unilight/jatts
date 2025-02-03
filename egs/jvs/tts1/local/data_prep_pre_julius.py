@@ -59,6 +59,8 @@ if __name__ == "__main__":
 
         # override wav_path to absolute path
         new_data["wav_path"] = os.path.join(args.db_root, item["wav_path"])
+        if "ref_wav_path" in item:
+            new_data["ref_wav_path"] = os.path.join(args.db_root, item["ref_wav_path"])
 
         # write spk
         new_data["spk"] = spk

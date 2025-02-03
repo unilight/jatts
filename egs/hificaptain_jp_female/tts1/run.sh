@@ -22,11 +22,12 @@ conf=conf/fastspeech2.v1.yaml
 
 # dataset configuration
 # db_root=downloads
-db_root=/data/group1/z44476r/Corpora/jvs_ver1
+db_root=/data/group1/z44476r/Corpora/hi-fi-captain/ja-JP/female
 dumpdir=dump                # directory to dump full features
 
 # data preparation related
 julius_clean=false
+create_histogram=false
 
 # text related setting
 token_type="phn"
@@ -55,7 +56,7 @@ checkpoint=""               # checkpoint path to be used for decoding
                             # (e.g. <path>/<to>/checkpoint-400000steps.pkl)
 
 # evaluation related setting
-eval_metrics="mcd sheet spkemb asr"
+eval_metrics="mcd sheet asr"
 
 # shellcheck disable=SC1091
 . utils/parse_options.sh || exit 1;
@@ -64,7 +65,7 @@ set -euo pipefail
 
 train_set="train"
 dev_set="dev"
-test_set="test_parallel_with_ref"
+test_set="test"
 
 token_listdir="${dumpdir}/token_list/${train_set}_${token_type}"
 if [ "${cleaner}" != none ]; then
@@ -76,34 +77,42 @@ fi
 token_list="${token_listdir}/tokens.txt"
 
 # ========================== Main stages start from here. ==========================
+
                                        
 if [ ${stage} -le -1 ] && [ ${stop_stage} -ge -1 ]; then
     log "stage -1: Data and pre-trained models downloading"
 
-    # TODO(unilight): implement this
-    local/data_download.sh ${db_root}
+    # download dataset
+    # local/data_download.sh "downloads"
+
+    # download pretrained vocoder
+    utils/hf_download.py --repo_id "unilight/hificaptain-vc" --outdir "downloads" --filename "pwg_jp_female/checkpoint-400000steps.pkl"
+    utils/hf_download.py --repo_id "unilight/hificaptain-vc" --outdir "downloads" --filename "pwg_jp_female/config.yml"
+    utils/hf_download.py --repo_id "unilight/hificaptain-vc" --outdir "downloads" --filename "pwg_jp_female/stats.h5"
 fi
 
 if [ ${stage} -le 0 ] && [ ${stop_stage} -ge 0 ]; then
     log "stage 0: Data preparation"
 
-    for _set in "${train_set}" "${dev_set}" "${test_set}"; do
-        log "Preparing ${_set} set"
-        python local/data_prep_pre_julius.py \
-            --original_csv "data/original_csvs/${_set}.csv" \
-            --db_root "${db_root}" \
-            --out "data/${_set}.pre_julius.csv"
-    done
+    mkdir -p "data"
 
-    log "Run segmentation with Julius. This may take 15 minutes."
-    local/run_julius.sh \
+    log "Making csv files"
+    python local/data_prep_pre_julius.py \
+        --train_set "${train_set}.pre_julius" \
+        --dev_set "${dev_set}.pre_julius" \
+        --test_set "${test_set}.pre_julius" \
+        --db_root "${db_root}" \
+        --outdir "data"
+
+    log "Run segmentation with Julius. This may take 20-25 minutes."
+    utils/run_julius.sh \
         --train_set "${train_set}" \
         --dev_set "${dev_set}" \
         --clean "${julius_clean}"
 
     for _set in "${train_set}" "${dev_set}"; do
         log "Collecting Julius segmentation results for ${_set}"
-        python utils/data_prep_post_julius.py \
+        python utils//data_prep_post_julius.py \
             --juliusdir "data/julius/tmp" \
             --conf "${conf}" \
             --original_csv "data/${_set}.pre_julius.csv" \
@@ -114,11 +123,6 @@ if [ ${stage} -le 0 ] && [ ${stop_stage} -ge 0 ]; then
     python utils/data_prep_post_for_test_set.py \
         --original_csv "data/${test_set}.pre_julius.csv" \
         --out "data/${test_set}.csv"
-
-    log "Prepare f0 range"
-    python local/prepare_f0_range.py \
-        --original_f0_path "${db_root}/gender_f0range.txt" \
-        --out "conf/f0.yaml"
 fi
 
 if [ "${stage}" -le 1 ] && [ "${stop_stage}" -ge 1 ]; then
@@ -221,13 +225,13 @@ if [ "${stage}" -le 4 ] && [ "${stop_stage}" -ge 4 ]; then
     [ -z "${checkpoint}" ] && checkpoint="$(ls -dt "${expdir}"/*.pkl | head -1 || true)"
     outdir="${expdir}/results/$(basename "${checkpoint}" .pkl)"
     pids=()
-    for name in "${test_set}"; do
+    for name in dev_raw_feat "${test_set}"; do
         [ ! -e "${outdir}/${name}" ] && mkdir -p "${outdir}/${name}"
         [ "${n_gpus}" -gt 1 ] && n_gpus=1
         log "Decoding start. See the progress via ${outdir}/${name}/decode.log."
         ${cuda_cmd} --gpu "${n_gpus}" "${outdir}/${name}/decode.log" \
             tts_decode.py \
-                --csv "data/${test_set}.csv" \
+                --csv "data/${name}.csv" \
                 --stats "${expdir}/stats.h5" \
                 --token-list "${expdir}/tokens.txt" \
                 --token-column "${token_column}" \

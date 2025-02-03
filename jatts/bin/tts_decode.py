@@ -242,6 +242,22 @@ def main():
                 "PCM_16",
             )
 
+            # when decoding dev set, for debugging purpose, synthesize analysis-synthesis voice
+            if "feat_path" in item:
+                if not os.path.exists(os.path.join(config["outdir"], "wav_anasyn")):
+                    os.makedirs(os.path.join(config["outdir"], "wav_anasyn"), exist_ok=True)
+
+                mel = torch.Tensor(read_hdf5(item["feat_path"], "mel"))
+                mel = (mel - stats["mean"]) / stats["scale"]
+                mel = mel.to(outs.device)
+
+                y, sr = vocoder.decode(mel)
+                sf.write(
+                    os.path.join(config["outdir"], "wav_anasyn", f"{sample_id}.wav"),
+                    y.cpu().numpy(),
+                    sr,
+                    "PCM_16",
+                )
 
 if __name__ == "__main__":
     main()

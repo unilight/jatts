@@ -1,0 +1,132 @@
+###########################################################
+#                FEATURE EXTRACTION SETTING               #
+###########################################################
+sampling_rate: 48000     # Sampling rate.
+fft_size: 2048           # FFT size.
+hop_size: 512            # Hop size.
+win_length: null         # Window length.
+                         # If set to null, it will be the same as fft_size.
+window: "hann"           # Window function.
+num_mels: 80             # Number of mel basis.
+fmin: 0                 # Minimum freq in mel basis calculation.
+fmax: null               # Maximum frequency in mel basis calculation.
+global_gain_scale: 1.0   # Will be multiplied to all of waveform.
+
+feat_list: ["mel", "pitch", "energy"]
+out_feat_type: mel
+
+pitch_extract_type: dio             # pitch extractor type
+pitch_extract_f0min: 40             # default f0min (if f0.yaml not provided)
+pitch_extract_f0max: 400            # default f0max (if f0.yaml not provided)
+energy_extract_type: energy         # energy extractor type
+
+###########################################################
+#              NETWORK ARCHITECTURE SETTING               #
+###########################################################
+model_type: FastSpeech2
+model_params:
+    odim: 80
+    adim: 384         # attention dimension
+    aheads: 2         # number of attention heads
+    elayers: 4        # number of encoder layers
+    eunits: 1536      # number of encoder ff units
+    dlayers: 4        # number of decoder layers
+    dunits: 1536      # number of decoder ff units
+    positionwise_layer_type: conv1d   # type of position-wise layer
+    positionwise_conv_kernel_size: 3  # kernel size of position wise conv layer
+    duration_predictor_layers: 2      # number of layers of duration predictor
+    duration_predictor_chans: 256     # number of channels of duration predictor
+    duration_predictor_kernel_size: 3 # filter size of duration predictor
+    postnet_layers: 5                 # number of layers of postnset
+    postnet_filts: 5                  # filter size of conv layers in postnet
+    postnet_chans: 256                # number of channels of conv layers in postnet
+    use_masking: True                 # whether to apply masking for padded part in loss calculation
+    # use_scaled_pos_enc: True          # whether to use scaled positional encoding
+    encoder_normalize_before: True    # whether to perform layer normalization before the input
+    decoder_normalize_before: True    # whether to perform layer normalization before the input
+    reduction_factor: 1               # reduction factor
+    encoder_type: conformer           # encoder type
+    decoder_type: conformer           # decoder type
+    conformer_pos_enc_layer_type: rel_pos        # conformer positional encoding type
+    conformer_self_attn_layer_type: rel_selfattn # conformer self-attention type
+    conformer_activation_type: swish             # conformer activation type
+    use_macaron_style_in_conformer: true         # whether to use macaron style in conformer
+    use_cnn_in_conformer: true                   # whether to use CNN in conformer
+    conformer_enc_kernel_size: 7                 # kernel size in CNN module of conformer-based encoder
+    conformer_dec_kernel_size: 31                # kernel size in CNN module of conformer-based decoder
+    init_type: xavier_uniform                    # initialization type
+    # init_enc_alpha: 1.0               # initial value of alpha of encoder scaled position encoding
+    # init_dec_alpha: 1.0               # initial value of alpha of decoder scaled position encoding
+    transformer_enc_dropout_rate: 0.2            # dropout rate for transformer encoder layer
+    transformer_enc_positional_dropout_rate: 0.2 # dropout rate for transformer encoder positional encoding
+    transformer_enc_attn_dropout_rate: 0.2       # dropout rate for transformer encoder attention layer
+    transformer_dec_dropout_rate: 0.2            # dropout rate for transformer decoder layer
+    transformer_dec_positional_dropout_rate: 0.2 # dropout rate for transformer decoder positional encoding
+    transformer_dec_attn_dropout_rate: 0.2       # dropout rate for transformer decoder attention layer
+    pitch_predictor_layers: 5                  # number of conv layers in pitch predictor
+    pitch_predictor_chans: 256                 # number of channels of conv layers in pitch predictor
+    pitch_predictor_kernel_size: 5             # kernel size of conv leyers in pitch predictor
+    pitch_predictor_dropout: 0.5               # dropout rate in pitch predictor
+    pitch_embed_kernel_size: 1                 # kernel size of conv embedding layer for pitch
+    pitch_embed_dropout: 0.0                   # dropout rate after conv embedding layer for pitch
+    stop_gradient_from_pitch_predictor: true   # whether to stop the gradient from pitch predictor to encoder
+    energy_predictor_layers: 2                 # number of conv layers in energy predictor
+    energy_predictor_chans: 256                # number of channels of conv layers in energy predictor
+    energy_predictor_kernel_size: 3            # kernel size of conv leyers in energy predictor
+    energy_predictor_dropout: 0.5              # dropout rate in energy predictor
+    energy_embed_kernel_size: 1                # kernel size of conv embedding layer for energy
+    energy_embed_dropout: 0.0                  # dropout rate after conv embedding layer for energy
+    stop_gradient_from_energy_predictor: false # whether to stop the gradient from energy predictor to encoder
+
+###########################################################
+#                      LOSS SETTING                       #
+###########################################################
+trainer_type: FastSpeech2Trainer
+collater_type: FastSpeech2Collater
+criterions:
+    "MelLoss":
+        _type: L1Loss
+    "DurationPredictorLoss": {}
+    "PitchLoss": {}
+    "EnergyLoss": {}
+
+###########################################################
+#                   INFERENCE SETTING                     #
+###########################################################
+vocoder:
+    checkpoint: ./downloads/pwg_jp_female/checkpoint-400000steps.pkl
+    config: ./downloads/pwg_jp_female/config.yml
+    stats: ./downloads/pwg_jp_female/stats.h5
+
+###########################################################
+#                  DATA LOADER SETTING                    #
+###########################################################
+batch_size: 16               # Batch size.
+pin_memory: true            # Whether to pin memory in Pytorch DataLoader.
+num_workers: 2              # Number of workers in Pytorch DataLoader.
+allow_cache: true           # Whether to allow cache in dataset. If true, it requires cpu memory.
+
+###########################################################
+#             OPTIMIZER & SCHEDULER SETTING               #
+###########################################################
+optimizer_type: Adam
+optimizer_params:
+    lr: 0.0008              # Learning rate := lr (default = 1.0) / model_size**0.5 / warmup_steps**0.5
+                            # See https://github.com/espnet/espnet/blob/master/espnet2/schedulers/noam_lr.py#L49-L50
+grad_norm: 1.0              # Gradient norm.
+scheduler: warmuplr
+scheduler_params:
+    warmup_steps: 4000      # Scheduler warm up step
+
+###########################################################
+#                    INTERVAL SETTING                     #
+###########################################################
+train_max_steps: 100000     # Number of training steps.
+save_interval_steps: 1000   # Interval steps to save checkpoint.
+eval_interval_steps: 100    # Interval steps to evaluate the network.
+log_interval_steps: 10      # Interval steps to record the training log.
+
+###########################################################
+#                     OTHER SETTING                       #
+###########################################################
+num_save_intermediate_results: 4  # Number of results to be saved as intermediate results.
