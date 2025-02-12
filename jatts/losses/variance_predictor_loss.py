@@ -7,6 +7,7 @@
 import torch
 from jatts.modules.utils import make_non_pad_mask
 
+
 class PitchLoss(torch.nn.Module):
     """Pitch Loss function module (for FastSpeech2)"""
 
@@ -49,6 +50,7 @@ class PitchLoss(torch.nn.Module):
         loss = self.criterion(p_outs, ps)
 
         return loss
+
 
 class EnergyLoss(torch.nn.Module):
     """Energy Loss function module (for FastSpeech2)"""

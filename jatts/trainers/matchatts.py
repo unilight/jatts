@@ -5,6 +5,7 @@
 #  MIT License (https://opensource.org/licenses/MIT)
 
 import logging
+import math
 import os
 import time
 
@@ -18,8 +19,8 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
 
-class FastSpeech2Trainer(Trainer):
-    """Customized trainer module for FastSpeech2 training."""
+class MatchaTTSTrainer(Trainer):
+    """Customized trainer module for Matcha-TTS training."""
 
     def _train_step(self, batch):
         # parse batch
@@ -27,10 +28,6 @@ class FastSpeech2Trainer(Trainer):
         ys = batch["ys"].to(self.device)
         ilens = batch["ilens"].to(self.device)
         olens = batch["olens"].to(self.device)
-        pitches = batch["pitch"].to(self.device)
-        pitch_lengths = batch["pitch_lens"].to(self.device)
-        energys = batch["energys"].to(self.device)
-        energy_lengths = batch["energy_lens"].to(self.device)
         durations = batch["durations"].to(self.device)
         duration_lens = batch["duration_lens"].to(self.device)
 
@@ -41,30 +38,12 @@ class FastSpeech2Trainer(Trainer):
             spkembs = batch["spkembs"].to(self.device)
 
         # model forward
-        ret = self.model(
-            xs,
-            ilens,
-            ys,
-            olens,
-            durations,
-            duration_lens,
-            pitches,
-            pitch_lengths,
-            energys,
-            energy_lengths,
-            spkembs,
-        )
-        after_outs = ret["after_outs"]
-        before_outs = ret["before_outs"]
+        ret = self.model(xs, ilens, ys, olens, durations, duration_lens, spkembs)
         d_outs = ret["d_outs"]
-        p_outs = ret["p_outs"]
-        e_outs = ret["e_outs"]
-        ys_ = ret["ys"]
-        olens_ = ret["olens"]
 
-        # mel loss (default L1 loss)
-        mel_loss = self.criterion["MelLoss"](after_outs, before_outs, ys_, olens_)
-        self.total_train_loss["train/mel_loss"] += mel_loss.item()
+        # cfm loss
+        cfm_loss = ret["cfm_loss"]
+        self.total_train_loss["train/cfm_loss"] += cfm_loss.item()
 
         # duration loss
         duration_loss = self.criterion["DurationPredictorLoss"](
@@ -72,15 +51,17 @@ class FastSpeech2Trainer(Trainer):
         )
         self.total_train_loss["train/duration_loss"] += duration_loss.item()
 
-        # pitch loss
-        pitch_loss = self.criterion["PitchLoss"](p_outs, pitches, ilens)
-        self.total_train_loss["train/pitch_loss"] += pitch_loss.item()
+        # prior loss
+        if "EncoderPriorLoss" in self.criterion:
+            # ys, hs: [B, T, dim]; h_masks: [B, 1, T]
+            encoder_prior_loss = self.criterion["EncoderPriorLoss"](
+                ret["hs"], ret["ys"], ret["olens_in"]
+            )
+        else:
+            encoder_prior_loss = 0.0
+        self.total_train_loss["train/encoder_prior_loss"] += encoder_prior_loss.item()
 
-        # energy loss
-        energy_loss = self.criterion["EnergyLoss"](e_outs, energys, ilens)
-        self.total_train_loss["train/energy_loss"] += energy_loss.item()
-
-        gen_loss = mel_loss + duration_loss + pitch_loss + energy_loss
+        gen_loss = cfm_loss + duration_loss + encoder_prior_loss
         self.total_train_loss["train/loss"] += gen_loss.item()
 
         # update model
@@ -180,9 +161,19 @@ class FastSpeech2Trainer(Trainer):
         ):
             start_time = time.time()
             if self.config["distributed"]:
-                ret = self.model.module.inference(x[:ilen], spembs=spkemb)
+                ret = self.model.module.inference(
+                    x[:ilen],
+                    spembs=spkemb,
+                    temperature=self.config["temperature"],
+                    n_timesteps=self.config["ode_steps"],
+                )
             else:
-                ret = self.model.inference(x[:ilen], spembs=spkemb)
+                ret = self.model.inference(
+                    x[:ilen],
+                    spembs=spkemb,
+                    temperature=self.config["temperature"],
+                    n_timesteps=self.config["ode_steps"],
+                )
 
             outs = ret["feat_gen"]
             d_outs = ret["duration"]

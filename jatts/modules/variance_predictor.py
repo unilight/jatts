@@ -6,9 +6,8 @@
 """Variance predictor related modules."""
 
 import torch
-from typeguard import typechecked
-
 from jatts.modules.transformer.layer_norm import LayerNorm
+from typeguard import typechecked
 
 
 class VariancePredictor(torch.nn.Module):

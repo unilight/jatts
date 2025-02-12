@@ -7,7 +7,6 @@
 """Subsampling layer definition."""
 
 import torch
-
 from jatts.modules.positional_encoding import PositionalEncoding
 
 

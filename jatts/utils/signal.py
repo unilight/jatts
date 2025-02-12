@@ -1,8 +1,7 @@
 import numpy as np
 import pysptk
 import pyworld as pw
-from scipy.signal import firwin
-from scipy.signal import lfilter
+from scipy.signal import firwin, lfilter
 
 MCEP_DIM = 39
 MCEP_ALPHA = 0.466

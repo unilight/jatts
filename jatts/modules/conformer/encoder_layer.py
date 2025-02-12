@@ -8,9 +8,8 @@
 """Encoder self-attention layer definition."""
 
 import torch
-from torch import nn
-
 from jatts.modules.transformer.layer_norm import LayerNorm
+from torch import nn
 
 
 class EncoderLayer(nn.Module):

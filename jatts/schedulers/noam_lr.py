@@ -1,12 +1,12 @@
 """Noam learning rate scheduler module."""
+
 import warnings
 from typing import Union
 
 import torch
+from espnet2.schedulers.abs_scheduler import AbsBatchStepScheduler
 from torch.optim.lr_scheduler import _LRScheduler
 from typeguard import check_argument_types
-
-from espnet2.schedulers.abs_scheduler import AbsBatchStepScheduler
 
 
 class NoamLR(_LRScheduler, AbsBatchStepScheduler):

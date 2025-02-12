@@ -13,10 +13,9 @@ import numpy as np
 import pyworld
 import torch
 import torch.nn.functional as F
+from jatts.utils.types import int_or_none
 from scipy.interpolate import interp1d
 from typeguard import typechecked
-
-from jatts.utils.types import int_or_none
 
 
 class Dio:

@@ -8,15 +8,14 @@ import argparse
 import logging
 import os
 from pathlib import Path
-from joblib import Parallel, delayed
 
 import kaldiio
 import librosa
 import matplotlib
 import numpy as np
-
-from jatts.utils.signal import world_extract
 from jatts.utils import read_csv
+from jatts.utils.signal import world_extract
+from joblib import Parallel, delayed
 
 matplotlib.use("Agg")  # noqa #isort:skip
 import matplotlib.pyplot as plt  # noqa isort:skip
@@ -91,9 +90,7 @@ def main():
     dcp = "Create histogram for speaker-dependent configure"
     parser = argparse.ArgumentParser(description=dcp)
     parser.add_argument("--n_jobs", type=int, default=16, help="# of CPUs")
-    parser.add_argument(
-        "--csv", type=str, default=None, help="path to csv file"
-    )
+    parser.add_argument("--csv", type=str, default=None, help="path to csv file")
     parser.add_argument("--figure_dir", type=str, help="Directory for figure output")
     args = parser.parse_args()
 
@@ -107,7 +104,7 @@ def main():
     dataset, _ = read_csv(args.csv, dict_reader=True)
 
     # get speaker list
-    if "spk" not in dataset[0]: # single speaker
+    if "spk" not in dataset[0]:  # single speaker
         num_spks = 1
 
     # extract features in parallel

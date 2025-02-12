@@ -5,13 +5,13 @@
 #  MIT License (https://opensource.org/licenses/MIT)
 
 import logging
-from fastdtw import fastdtw
+
 import librosa
 import numpy as np
 import scipy
+from fastdtw import fastdtw
+from jatts.utils.signal import extfrm, world_extract
 from scipy.io import wavfile
-
-from jatts.utils.signal import world_extract, extfrm
 
 
 def calculate_mcd_f0(x, y, fs, f0min, f0max, calculate_gv=False):

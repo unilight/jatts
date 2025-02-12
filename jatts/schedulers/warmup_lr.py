@@ -1,9 +1,10 @@
 """Warm up learning rate scheduler module."""
+
+from abc import ABC, abstractmethod
 from typing import Union
 
 import torch
 from torch.optim.lr_scheduler import _LRScheduler
-from abc import ABC, abstractmethod
 
 
 class AbsBatchStepScheduler(ABC):

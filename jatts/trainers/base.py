@@ -4,15 +4,14 @@
 # Copyright 2025 Wen-Chin Huang
 #  MIT License (https://opensource.org/licenses/MIT)
 
-from collections import defaultdict
 import logging
 import os
-from tqdm import tqdm
+from collections import defaultdict
 
 import torch
-from tensorboardX import SummaryWriter
-
 from jatts.utils.model_io import freeze_modules
+from tensorboardX import SummaryWriter
+from tqdm import tqdm
 
 
 class Trainer(object):
@@ -212,7 +211,7 @@ class Trainer(object):
                     f"(Steps: {self.steps}) {key} = {self.total_train_loss[key]:.4f}."
                 )
             self._write_to_tensorboard(self.total_train_loss)
-            peak_memory = torch.cuda.max_memory_allocated()/(2**30)
+            peak_memory = torch.cuda.max_memory_allocated() / (2**30)
             logging.info(f"Peak Memory: {peak_memory:.4f} GB")
             torch.cuda.reset_peak_memory_stats()
 

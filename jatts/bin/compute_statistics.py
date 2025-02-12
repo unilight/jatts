@@ -13,10 +13,9 @@ import os
 import h5py
 import numpy as np
 import yaml
+from jatts.utils import read_csv, read_hdf5, write_hdf5
 from sklearn.preprocessing import StandardScaler
 from tqdm import tqdm
-
-from jatts.utils import read_csv, read_hdf5, write_hdf5
 
 
 def main():

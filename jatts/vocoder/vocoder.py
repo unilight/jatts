@@ -6,11 +6,11 @@
 
 import logging
 import time
+
 import torch
 import yaml
-
-from parallel_wavegan.utils import load_model
 from jatts.utils import read_hdf5
+from parallel_wavegan.utils import load_model
 
 
 class Vocoder(object):

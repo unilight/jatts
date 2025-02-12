@@ -11,30 +11,33 @@ import logging
 import os
 import sys
 
-import numpy as np
-import torch
-import yaml
-from torch.optim.lr_scheduler import ExponentialLR
-from torch.utils.data import DataLoader
-
 import jatts
 import jatts.collaters
 import jatts.losses
 import jatts.models
 import jatts.trainers
+import numpy as np
+import torch
+import yaml
 from jatts.datasets.tts_dataset import TTSDataset
 from jatts.schedulers.warmup_lr import WarmupLR
 
 # from jatts.losses import Seq2SeqLoss, GuidedMultiHeadAttentionLoss
 from jatts.utils import read_hdf5
 from jatts.vocoder import Vocoder
+from torch.optim.lr_scheduler import ExponentialLR, StepLR
+from torch.utils.data import DataLoader
 
 # from jatts.vocoder.s3prl_feat2wav import S3PRL_Feat2Wav
 # from jatts.vocoder.griffin_lim import Spectrogram2Waveform
 # from jatts.vocoder.encodec import EnCodec_decoder
 
 
-scheduler_classes = {"warmuplr": WarmupLR, "exponentiallr": ExponentialLR}
+scheduler_classes = {
+    "warmuplr": WarmupLR,
+    "exponentiallr": ExponentialLR,
+    "StepLR": StepLR,
+}
 
 
 def main():

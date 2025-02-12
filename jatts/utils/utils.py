@@ -12,14 +12,13 @@ import os
 import re
 import sys
 import tarfile
-
 from distutils.version import LooseVersion
-from filelock import FileLock
 
 import h5py
 import numpy as np
 import torch
 import yaml
+from filelock import FileLock
 
 
 def get_basename(path):

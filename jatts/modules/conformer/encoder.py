@@ -7,7 +7,6 @@
 import logging
 
 import torch
-
 from jatts.modules.conformer.convolution import ConvolutionModule
 from jatts.modules.conformer.encoder_layer import EncoderLayer
 from jatts.modules.conformer.swish import Swish

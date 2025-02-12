@@ -7,6 +7,7 @@
 import torch
 from jatts.modules.utils import make_non_pad_mask
 
+
 class MelLoss(torch.nn.Module):
     """Mel Loss function module (for feed-forward Transformer)"""
 

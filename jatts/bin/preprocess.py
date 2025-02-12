@@ -15,13 +15,12 @@ import numpy as np
 import soundfile as sf
 import torch
 import yaml
-from tqdm import tqdm
-
 from jatts.modules.feature_extract.dio import Dio
 from jatts.modules.feature_extract.energy import Energy
 from jatts.modules.feature_extract.mel import logmelfilterbank
 from jatts.modules.feature_extract.spkemb_speechbrain import SpeechBrainSpkEmbExtractor
 from jatts.utils import read_csv, write_csv, write_hdf5
+from tqdm import tqdm
 
 # from s3prl.nn import Featurizer
 # import s3prl_vc.models
@@ -55,10 +54,7 @@ def main():
         help="yaml format configuration file.",
     )
     parser.add_argument(
-        "--f0_path",
-        default=None,
-        type=str,
-        help="file storing f0 ranges"
+        "--f0_path", default=None, type=str, help="file storing f0 ranges"
     )
     parser.add_argument(
         "--verbose",
@@ -96,10 +92,10 @@ def main():
 
     # load f0min and f0 max if given
     if args.f0_path is not None:
-        with open(args.f0_path, 'r') as f:
+        with open(args.f0_path, "r") as f:
             f0_all = yaml.load(f, Loader=yaml.FullLoader)
     else:
-        f0_all=None
+        f0_all = None
 
     # check directly existence
     if not os.path.exists(args.dumpdir):
@@ -185,7 +181,10 @@ def main():
             duration = None
 
         audio, fs = librosa.load(
-            item["wav_path"], sr=config["sampling_rate"], offset=offset, duration=duration
+            item["wav_path"],
+            sr=config["sampling_rate"],
+            offset=offset,
+            duration=duration,
         )
 
         # check

@@ -11,7 +11,6 @@ from typing import Optional
 
 import torch
 import torch.nn.functional as F
-
 from jatts.modules.transformer.layer_norm import LayerNorm
 from jatts.modules.vits.flow import (
     ConvFlow,

@@ -8,9 +8,6 @@ import argparse
 import logging
 import multiprocessing as mp
 import os
-from prettytable import PrettyTable
-from tqdm import tqdm
-import yaml
 
 import jiwer
 import librosa
@@ -19,9 +16,12 @@ import numpy as np
 import pyopenjtalk
 import torch
 import torchaudio
+import yaml
 from jatts.evaluate.dtw_based import calculate_mcd_f0
 from jatts.modules.feature_extract.spkemb_speechbrain import SpeechBrainSpkEmbExtractor
 from jatts.utils import read_csv
+from prettytable import PrettyTable
+from tqdm import tqdm
 
 
 def load_asr_model(device):
@@ -133,7 +133,9 @@ def _calculate_mcd_f0(dataset, wavdir, f0_all, results):
 
         # read both converted and ground truth wav
         generated_wav, generated_fs = librosa.load(generated_wav_path, sr=None)
-        gt_wav, gt_fs = librosa.load(gt_wav_path, sr=generated_fs, offset=offset, duration=duration)
+        gt_wav, gt_fs = librosa.load(
+            gt_wav_path, sr=generated_fs, offset=offset, duration=duration
+        )
         if generated_fs != gt_fs:
             generated_wav = torchaudio.transforms.Resample(generated_fs, gt_fs)(
                 torch.from_numpy(generated_wav)
@@ -154,7 +156,13 @@ def get_parser():
     parser.add_argument(
         "--f0_path", required=True, type=str, help="file storing f0 ranges"
     )
-    parser.add_argument('--metrics', nargs='+',  required=True, default=["mcd", "sheet", "asr"], help='metrics to evaluate')
+    parser.add_argument(
+        "--metrics",
+        nargs="+",
+        required=True,
+        default=["mcd", "sheet", "asr"],
+        help="metrics to evaluate",
+    )
     parser.add_argument(
         "--n_jobs", default=10, type=int, help="number of parallel jobs"
     )
@@ -174,16 +182,13 @@ def main():
     logging.info("number of utterances = {}".format(len(dataset)))
 
     # load f0min and f0 max
-    with open(args.f0_path, 'r') as f:
+    with open(args.f0_path, "r") as f:
         f0_all = yaml.load(f, Loader=yaml.FullLoader)
 
     # start evaluation
     results = []
     table = PrettyTable()
-    table.add_column(
-        "Sample ID",
-        [item["sample_id"] for item in dataset]
-    )
+    table.add_column("Sample ID", [item["sample_id"] for item in dataset])
     to_print = []
     for metric in args.metrics:
         if metric == "asr":
@@ -193,21 +198,16 @@ def main():
             asr_model = load_asr_model(device)
 
             # calculate error rates
-            ers, cer, wer = _calculate_asr_score(asr_model, device, dataset, args.wavdir)
+            ers, cer, wer = _calculate_asr_score(
+                asr_model, device, dataset, args.wavdir
+            )
             mCER = cer
             to_print.append(f"CER = {mCER:.1f}")
 
+            table.add_column("CER", [ers[item["sample_id"]][0] for item in dataset])
+            table.add_column("GT Text", [ers[item["sample_id"]][2] for item in dataset])
             table.add_column(
-                "CER",
-                [ers[item["sample_id"]][0] for item in dataset]
-            )
-            table.add_column(
-                "GT Text",
-                [ers[item["sample_id"]][2] for item in dataset]
-            )
-            table.add_column(
-                "Transcription",
-                [ers[item["sample_id"]][3] for item in dataset]
+                "Transcription", [ers[item["sample_id"]][3] for item in dataset]
             )
             table.custom_format["CER"] = lambda f, v: f"{v:.1f}"
             table.align["CER"] = "r"
@@ -223,7 +223,9 @@ def main():
             # calculate scores
             spkemb_sim_scores = {}
             for item in tqdm(dataset):
-                generated_wav_path = os.path.join(args.wavdir, item["sample_id"] + ".wav")
+                generated_wav_path = os.path.join(
+                    args.wavdir, item["sample_id"] + ".wav"
+                )
                 gt_wav_path = item["ref_wav_path"]
                 generated_wav_spkemb = spkemb_extractor.forward(generated_wav_path)
                 gt_wav_spkemb = spkemb_extractor.forward(gt_wav_path)
@@ -231,12 +233,13 @@ def main():
                     np.linalg.norm(generated_wav_spkemb) * np.linalg.norm(gt_wav_spkemb)
                 )
                 spkemb_sim_scores[item["sample_id"]] = sim
-            mSPKEMB_SIM_SCORE = np.mean(np.array([v for v in spkemb_sim_scores.values()]))
+            mSPKEMB_SIM_SCORE = np.mean(
+                np.array([v for v in spkemb_sim_scores.values()])
+            )
             to_print.append(f"SPKEMB SIM = {mSPKEMB_SIM_SCORE:.3f}")
 
             table.add_column(
-                "SPKEMB SIM",
-                [spkemb_sim_scores[item["sample_id"]] for item in dataset]
+                "SPKEMB SIM", [spkemb_sim_scores[item["sample_id"]] for item in dataset]
             )
             table.custom_format["SPKEMB SIM"] = lambda f, v: f"{v:.3f}"
 
@@ -259,8 +262,7 @@ def main():
             to_print.append(f"SHEET SCORE = {mSHEET_SCORE:.3f}")
 
             table.add_column(
-                "SHEET Score",
-                [sheet_scores[item["sample_id"]] for item in dataset]
+                "SHEET Score", [sheet_scores[item["sample_id"]] for item in dataset]
             )
             table.custom_format["SHEET Score"] = lambda f, v: f"{v:.2f}"
 
@@ -299,22 +301,20 @@ def main():
                 to_print.append(f"F0RMSE = {mf0RMSE:.3f}")
                 to_print.append(f"F0CORR = {mf0CORR:.3f}")
                 to_print.append(f"DDUR = {mDDUR:.3f}")
-                
+
                 table.add_column(
-                    "MCD",
-                    [mcd_results[item["sample_id"]]["MCD"] for item in dataset]
+                    "MCD", [mcd_results[item["sample_id"]]["MCD"] for item in dataset]
                 )
                 table.add_column(
                     "F0RMSE",
-                    [mcd_results[item["sample_id"]]["F0RMSE"] for item in dataset]
+                    [mcd_results[item["sample_id"]]["F0RMSE"] for item in dataset],
                 )
                 table.add_column(
                     "F0CORR",
-                    [mcd_results[item["sample_id"]]["F0CORR"] for item in dataset]
+                    [mcd_results[item["sample_id"]]["F0CORR"] for item in dataset],
                 )
                 table.add_column(
-                    "DDUR",
-                    [mcd_results[item["sample_id"]]["DDUR"] for item in dataset]
+                    "DDUR", [mcd_results[item["sample_id"]]["DDUR"] for item in dataset]
                 )
                 table.custom_format["MCD"] = lambda f, v: f"{v:.2f}"
                 table.custom_format["F0RMSE"] = lambda f, v: f"{v:.3f}"
@@ -324,6 +324,7 @@ def main():
     logging.info("Mean " + "; ".join(to_print))
     table.sortby = "Sample ID"
     print(table)
+
 
 if __name__ == "__main__":
     main()

@@ -48,26 +48,16 @@ class FastSpeech2Collater(object):
 
         xs = []
         ys = []
-        pitches = []
-        energys = []
         durations = []
 
         for b in batch:
             xs.append(b["token_indices"])
             ys.append(b["mel"])
-            pitches.append(b["pitch"])
-            energys.append(b["energy"])
             durations.append(b["durations_int"])
 
         # get list of lengths (must be tensor for DataParallel)
         ilens = torch.from_numpy(np.array([x.shape[0] for x in xs])).long()
         olens = torch.from_numpy(np.array([y.shape[0] for y in ys])).long()
-        pitch_lens = torch.from_numpy(
-            np.array([pitch.shape[0] for pitch in pitches])
-        ).long()
-        energy_lens = torch.from_numpy(
-            np.array([energy.shape[0] for energy in energys])
-        ).long()
         duration_lens = torch.from_numpy(
             np.array([d.shape[0] for d in durations])
         ).long()
@@ -75,8 +65,6 @@ class FastSpeech2Collater(object):
         # perform padding and conversion to tensor
         xs = pad_list([torch.from_numpy(x).long() for x in xs], 0)
         ys = pad_list([torch.from_numpy(y).float() for y in ys], 0)
-        pitches = pad_list([torch.from_numpy(pitch).float() for pitch in pitches], 0)
-        energys = pad_list([torch.from_numpy(energy).float() for energy in energys], 0)
         durations = pad_list([torch.from_numpy(d).long() for d in durations], 0)
 
         items = {
@@ -84,14 +72,32 @@ class FastSpeech2Collater(object):
             "ilens": ilens,
             "ys": ys,
             "olens": olens,
-            "pitch": pitches,
-            "pitch_lens": pitch_lens,
-            "energys": energys,
-            "energy_lens": energy_lens,
             "durations": durations,
             "duration_lens": duration_lens,
             "spkembs": None,
         }
+
+        if "pitch" in batch[0]:
+            pitches = [b["pitch"] for b in batch]
+            pitch_lens = torch.from_numpy(
+                np.array([pitch.shape[0] for pitch in pitches])
+            ).long()
+            pitches = pad_list(
+                [torch.from_numpy(pitch).float() for pitch in pitches], 0
+            )
+            item["pitch"] = pitches
+            item["pitch_lens"] = pitch_lens
+
+        if "energy" in batch[0]:
+            energys = [b["energy"] for b in batch]
+            energy_lens = torch.from_numpy(
+                np.array([energy.shape[0] for energy in energys])
+            ).long()
+            energys = pad_list(
+                [torch.from_numpy(energy).float() for energy in energys], 0
+            )
+            item["energys"] = energys
+            item["energy_lens"] = energy_lens
 
         if "spkemb" in batch[0]:
             spkembs = [b["spkemb"] for b in batch]

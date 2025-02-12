@@ -11,11 +11,10 @@ from multiprocessing import Manager
 from pathlib import Path
 
 import numpy as np
-from sklearn.preprocessing import StandardScaler
-from torch.utils.data import Dataset
-
 from jatts.utils import read_csv, read_hdf5
 from jatts.utils.token_id_converter import TokenIDConverter
+from sklearn.preprocessing import StandardScaler
+from torch.utils.data import Dataset
 
 
 class TTSDataset(Dataset):

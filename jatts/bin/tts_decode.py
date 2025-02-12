@@ -11,17 +11,16 @@ import logging
 import os
 import time
 
+import jatts.models
 import numpy as np
 import soundfile as sf
 import torch
 import yaml
-from tqdm import tqdm
-
-import jatts.models
 from jatts.datasets.tts_dataset import TTSDataset
 from jatts.utils import read_hdf5
 from jatts.utils.plot import plot_1d, plot_attention, plot_generated_and_ref_2d
 from jatts.vocoder import Vocoder
+from tqdm import tqdm
 
 # from jatts.vocoder.s3prl_feat2wav import S3PRL_Feat2Wav
 # from jatts.vocoder.griffin_lim import Spectrogram2Waveform
@@ -207,16 +206,26 @@ def main():
 
             # prepare input
             x = torch.tensor(item["token_indices"], dtype=torch.long).to(device)
-
-            # model forward
-            start_time = time.time()
             if "spkemb" in config["feat_list"]:
                 spkemb = torch.tensor(
                     spkemb_extractor.forward(item["ref_wav_path"])
                 ).to(device)
             else:
                 spkemb = None
-            ret = model.inference(x, spembs=spkemb)
+
+            # inference options
+            if config["model_type"] == "MatchaTTS":
+                kwargs = {
+                    "temperature": config["temperature"],
+                    "n_timesteps": config["ode_steps"],
+                }
+            else:
+                kwargs = {}
+
+            # model forward
+            start_time = time.time()
+            ret = model.inference(x, spembs=spkemb, **kwargs)
+
             outs = ret["feat_gen"]
             d_outs = ret["duration"]
 
@@ -245,7 +254,9 @@ def main():
             # when decoding dev set, for debugging purpose, synthesize analysis-synthesis voice
             if "feat_path" in item:
                 if not os.path.exists(os.path.join(config["outdir"], "wav_anasyn")):
-                    os.makedirs(os.path.join(config["outdir"], "wav_anasyn"), exist_ok=True)
+                    os.makedirs(
+                        os.path.join(config["outdir"], "wav_anasyn"), exist_ok=True
+                    )
 
                 mel = torch.Tensor(read_hdf5(item["feat_path"], "mel"))
                 mel = (mel - stats["mean"]) / stats["scale"]
@@ -258,6 +269,7 @@ def main():
                     sr,
                     "PCM_16",
                 )
+
 
 if __name__ == "__main__":
     main()
