@@ -28,8 +28,12 @@ class MatchaTTSTrainer(Trainer):
         ys = batch["ys"].to(self.device)
         ilens = batch["ilens"].to(self.device)
         olens = batch["olens"].to(self.device)
-        durations = batch["durations"].to(self.device)
-        duration_lens = batch["duration_lens"].to(self.device)
+        if "durations" in batch:
+            durations = batch["durations"].to(self.device)
+            duration_lens = batch["duration_lens"].to(self.device)
+        else:
+            durations = None
+            duration_lens = None
 
         spkembs = batch[
             "spkembs"
@@ -41,15 +45,12 @@ class MatchaTTSTrainer(Trainer):
         ret = self.model(xs, ilens, ys, olens, durations, duration_lens, spkembs)
         d_outs = ret["d_outs"]
 
+        gen_loss = 0.0
+
         # cfm loss
         cfm_loss = ret["cfm_loss"]
         self.total_train_loss["train/cfm_loss"] += cfm_loss.item()
-
-        # duration loss
-        duration_loss = self.criterion["DurationPredictorLoss"](
-            d_outs, durations, ilens
-        )
-        self.total_train_loss["train/duration_loss"] += duration_loss.item()
+        gen_loss += cfm_loss
 
         # prior loss
         if "EncoderPriorLoss" in self.criterion:
@@ -60,8 +61,47 @@ class MatchaTTSTrainer(Trainer):
         else:
             encoder_prior_loss = 0.0
         self.total_train_loss["train/encoder_prior_loss"] += encoder_prior_loss.item()
+        gen_loss += encoder_prior_loss
 
-        gen_loss = cfm_loss + duration_loss + encoder_prior_loss
+        # duration loss
+        if self.steps > self.config.get("dp_train_start_steps", 0):
+            if "DurationPredictorLoss" in self.criterion:
+                duration_loss = self.criterion["DurationPredictorLoss"](
+                    d_outs, ret["ds"], ilens
+                )
+                self.total_train_loss["train/duration_loss"] += duration_loss.item()
+
+        else:
+            duration_loss = 0.0
+            self.total_train_loss["train/duration_loss"] += 0.0
+        gen_loss += duration_loss
+
+        # forward sum loss
+        if self.steps < self.config.get("dp_train_start_steps", 0):
+            if "ForwardSumLoss" in self.criterion:
+                log_p_attn = ret["log_p_attn"]
+                forwardsum_loss = self.criterion["ForwardSumLoss"](
+                    log_p_attn, ilens, olens
+                )
+                self.total_train_loss[
+                    "train/forward_sum_loss"
+                ] += forwardsum_loss.item()
+        else:
+            forwardsum_loss = 0.0
+            self.total_train_loss["train/forward_sum_loss"] += 0.0
+
+        gen_loss += self.config["lambda_align"] * forwardsum_loss
+
+        # bin loss
+        if self.steps > self.config.get("bin_loss_start_steps", 0):
+            bin_loss = ret["bin_loss"]
+            self.total_train_loss["train/binary_loss"] += bin_loss.item()
+        else:
+            bin_loss = 0.0
+            self.total_train_loss["train/binary_loss"] += 0.0
+
+        gen_loss += self.config["lambda_align"] * bin_loss
+
         self.total_train_loss["train/loss"] += gen_loss.item()
 
         # update model
@@ -163,6 +203,7 @@ class MatchaTTSTrainer(Trainer):
             if self.config["distributed"]:
                 ret = self.model.module.inference(
                     x[:ilen],
+                    y[:olen],
                     spembs=spkemb,
                     temperature=self.config["temperature"],
                     n_timesteps=self.config["ode_steps"],
@@ -170,6 +211,7 @@ class MatchaTTSTrainer(Trainer):
             else:
                 ret = self.model.inference(
                     x[:ilen],
+                    y[:olen],
                     spembs=spkemb,
                     temperature=self.config["temperature"],
                     n_timesteps=self.config["ode_steps"],
@@ -177,10 +219,21 @@ class MatchaTTSTrainer(Trainer):
 
             outs = ret["feat_gen"]
             d_outs = ret["duration"]
+            ds = ret["ds"]
 
             logging.info(
                 "inference speed = %.1f frames / sec."
                 % (int(outs.size(0)) / (time.time() - start_time))
+            )
+            logging.info(
+                "duration from alignment module:   {}".format(
+                    " ".join([str(int(d)) for d in ds.cpu().numpy()])
+                )
+            )
+            logging.info(
+                "duration from duration predictor: {}".format(
+                    " ".join([str(int(d)) for d in d_outs.cpu().numpy()])
+                )
             )
 
             _plot_and_save(
@@ -189,6 +242,14 @@ class MatchaTTSTrainer(Trainer):
                 ref=y[:olen].cpu().numpy(),
                 origin="lower",
             )
+
+            if "log_p_attn" in ret:
+                log_p_attn = ret["log_p_attn"]
+                _plot_and_save(
+                    log_p_attn.cpu().numpy(),
+                    dirname + f"/alignment/{idx}.png",
+                    origin="lower",
+                )
 
             if self.vocoder is not None:
                 if not os.path.exists(os.path.join(dirname, "wav")):
@@ -205,7 +266,12 @@ class MatchaTTSTrainer(Trainer):
             if not os.path.exists(os.path.join(dirname, "durations")):
                 os.makedirs(os.path.join(dirname, "durations"), exist_ok=True)
             d_outs = [str(d) for d in d_outs.cpu().numpy().tolist()]
-            d_gts = [str(d) for d in batch["durations"][idx][:ilen].numpy().tolist()]
+            if "durations" in batch:
+                d_gts = [
+                    str(d) for d in batch["durations"][idx][:ilen].numpy().tolist()
+                ]
+            else:
+                d_gts = [str(int(d)) for d in ds.cpu().numpy()]
             with open(dirname + f"/durations/{idx}.txt", "w") as f:
                 for d_gt, d_out in zip(d_gts, d_outs):
                     f.write(f"{d_gt} {d_out}\n")

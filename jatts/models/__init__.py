@@ -4,7 +4,6 @@ from .fastspeech2 import *  # NOQA
 
 # from .aas_vc import *  # NOQA
 from .matchatts import *  # NOQA
+from .matchatts_mas import *  # NOQA
 
-# AR_VC_MODELS = [VTN]
-
-# NAR_VC_MODELS = [FastSpeechVC, AASVC]
+from .vits import *  # NOQA

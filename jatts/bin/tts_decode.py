@@ -214,7 +214,7 @@ def main():
                 spkemb = None
 
             # inference options
-            if config["model_type"] == "MatchaTTS":
+            if config["model_type"] == "MatchaTTS" or config["model_type"] == "MatchaTTS_MAS":
                 kwargs = {
                     "temperature": config["temperature"],
                     "n_timesteps": config["ode_steps"],

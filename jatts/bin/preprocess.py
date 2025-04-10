@@ -224,8 +224,12 @@ def main():
         )
 
         # get phoneme-wise durations
-        phoneme_wise_durations = [int(d) for d in item["durations"].split(" ")]
-        total_duration = sum(phoneme_wise_durations)
+        if "durations" in item:
+            phoneme_wise_durations = [int(d) for d in item["durations"].split(" ")]
+            total_duration = sum(phoneme_wise_durations)
+        else:
+            phoneme_wise_durations = None
+            total_duration = None
 
         # extract and save feature
         feat_path = os.path.join(args.dumpdir, f"{utt_id}.h5")
@@ -246,11 +250,13 @@ def main():
                 )  # [n_frames, n_dim]
 
                 # check duration
-                assert (
-                    total_duration == feat.shape[0]
-                ), f"{utt_id}: mel duration {feat.shape[0]} and phoneme durations {total_duration} don't match ."
+                if phoneme_wise_durations is not None:
+                    assert (
+                        total_duration == feat.shape[0]
+                    ), f"{utt_id}: mel duration {feat.shape[0]} and phoneme durations {total_duration} don't match ."
 
             elif feat_type == "pitch":
+                assert phoneme_wise_durations is not None
                 if f0_all is not None:
                     f0min = f0_all[item["spk"]]["f0min"]
                     f0max = f0_all[item["spk"]]["f0max"]
@@ -265,6 +271,7 @@ def main():
                     durations=np.array(phoneme_wise_durations),
                 )
             elif feat_type == "energy":
+                assert phoneme_wise_durations is not None
                 feat = extractor.forward(
                     audio,
                     feat_length=total_duration,

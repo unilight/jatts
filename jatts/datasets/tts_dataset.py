@@ -99,7 +99,7 @@ class TTSDataset(Dataset):
         item["token_indices"] = token_indices
 
         # load durations (in training)
-        if not self.is_inference:
+        if not self.is_inference and "durations" in item:
             item["durations_int"] = np.array(
                 [int(d) for d in item["durations"].split(" ")]
             )
