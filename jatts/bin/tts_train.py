@@ -60,7 +60,7 @@ def main():
     parser.add_argument(
         "--stats",
         type=str,
-        required=True,
+        required=False,
         help="stats file for denormalization.",
     )
     # parser.add_argument(
@@ -195,6 +195,9 @@ def main():
         yaml.dump(config, f, Dumper=yaml.Dumper)
     for key, value in config.items():
         logging.info(f"{key} = {value}")
+    
+    if not args.stats:
+        stats = None
 
     # get dataset
     train_dataset = TTSDataset(
@@ -275,11 +278,13 @@ def main():
         **config["model_params"],
     ).to(device)
 
+    logging.info(f"stats: {args.stats}")
     # load output stats for denormalization
-    stats = {
-        "mean": read_hdf5(args.stats, f"{out_feat_type}_mean"),
-        "scale": read_hdf5(args.stats, f"{out_feat_type}_scale"),
-    }
+    if args.stats is not None:
+        stats = {
+            "mean": read_hdf5(args.stats, f"{out_feat_type}_mean"),
+            "scale": read_hdf5(args.stats, f"{out_feat_type}_scale"),
+        }
 
     # load vocoder
     if config.get("vocoder", False):
@@ -293,10 +298,11 @@ def main():
                 device,
             )
         elif vocoder_type == "encodec":
-            vocoder = EnCodec_decoder(
-                stats,  # this is used to denormalized the converted features,
-                device,
-            )
+            vocoder = None
+            # vocoder = EnCodec_decoder(
+            #     stats,  # this is used to denormalized the converted features,
+            #     device,
+            # )
         else:
             vocoder = Vocoder(
                 config["vocoder"]["checkpoint"],

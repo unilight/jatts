@@ -175,3 +175,5 @@ downloads/
 dump/
 data/
 *.done
+*.err
+*.out

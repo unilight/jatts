@@ -55,6 +55,8 @@ class TTSDataset(Dataset):
         if not self.is_inference:
             self.stats = {}
             for feat_name in feat_list:
+                if feat_name == "encodec":
+                    continue
                 scaler = StandardScaler()
                 scaler.mean_ = read_hdf5(stats_path, f"{feat_name}_mean")
                 scaler.scale_ = read_hdf5(stats_path, f"{feat_name}_scale")
@@ -116,12 +118,33 @@ class TTSDataset(Dataset):
                 # pitch, energy: [n_frames] -> [n_frames, 1]
                 elif feat_name in ["pitch", "energy"]:
                     raw_feat = raw_feat.reshape(-1, 1)
-                normalized_feat = self.stats[feat_name].transform(raw_feat)
+
+                if feat_name == "encodec":
+                    normalized_feat = raw_feat
+                else:
+                    normalized_feat = self.stats[feat_name].transform(raw_feat)
 
                 if feat_name == "spkemb":
                     normalized_feat = np.squeeze(normalized_feat, 0)
 
                 item[feat_name] = normalized_feat
+        
+        if "encodec" in self.feat_list:
+            # get random 3 second prompt
+            #spk_id = utt_id.split("_")[0]  # Get the prefix of the utt_id
+            #spk_files = [f for f in self.mel_files if spk_id in f]
+            #assert len(spk_files) > 0, f"No files found for speaker {spk_id}"
+            #mel_path = np.random.choice(self.mel_files)
+            #logging.info(f"mel_path: {mel_path}")
+            mel_path = "/data/group1/z44568r/toolkits2/jatts/egs/hificaptain_jp_female/tts3/dump/dev/feats/Seikatsu01_C-U__000100.h5"
+            prompts = read_hdf5(str(mel_path), "encodec")
+            prompts = prompts.transpose(1, 0)
+            max_prompt_length = 400
+            if prompts.shape[0] > max_prompt_length:
+                start = np.random.randint(0, prompts.shape[0] - max_prompt_length)
+                prompts = prompts[start:start + max_prompt_length]
+
+            item["prompts"] = prompts
 
         if self.allow_cache:
             self.caches[idx] = item
