@@ -138,6 +138,7 @@ def main():
         token_list_path=args.token_list,
         token_column=args.token_column,
         is_inference=True,
+        prompt_path=config.get("prompt_path", None),
         allow_cache=config.get("allow_cache", False),  # keep compatibility
     )
     logging.info(f"Dataset size = {len(dataset)}.")

@@ -14,6 +14,7 @@ global_gain_scale: 1.0   # Will be multiplied to all of waveform.
 
 feat_list: ["encodec"]
 out_feat_type: encodec
+prompt_path: /data/group1/z44568r/toolkits2/jatts/egs/hificaptain_jp_female/tts3/dump/eval/feats/Seikatsu01_C-U__000100.h5
 
 ###########################################################
 #              NETWORK ARCHITECTURE SETTING               #
@@ -63,7 +64,6 @@ scheduler_params:
 train_max_steps: 100000     # Number of training steps.
 save_interval_steps: 1000   # Interval steps to save checkpoint.
 eval_interval_steps: 100    # Interval steps to evaluate the network.
-train_max_steps: 10
 log_interval_steps: 10      # Interval steps to record the training log.
 
 ###########################################################

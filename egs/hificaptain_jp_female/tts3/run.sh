@@ -53,7 +53,7 @@ outdir=                     # In case not evaluation not executed together with 
 voc=PWG                     # vocoder used (GL or PWG)
 griffin_lim_iters=64        # number of iterations of Griffin-Lim
 ar_checkpoint=""               # checkpoint path to be used for decoding
-nar_checkpoint=""               # checkpoint path to be used for decoding
+nar_checkpoint=""              # checkpoint path to be used for decoding
                             # if not provided, the latest one will be used
                             # (e.g. <path>/<to>/checkpoint-400000steps.pkl)
 
@@ -65,7 +65,7 @@ eval_metrics="mcd sheet asr"
 
 set -euo pipefail
 
-train_set="eval"
+train_set="train"
 dev_set="dev"
 test_set="eval"
 

@@ -207,6 +207,7 @@ def main():
         token_list_path=args.token_list,
         token_column=args.token_column,
         is_inference=False,
+        prompt_path=config.get("prompt_path", None),
         allow_cache=config.get("allow_cache", False),  # keep compatibility
     )
     logging.info(f"The number of training files = {len(train_dataset)}.")
@@ -217,6 +218,7 @@ def main():
         token_list_path=args.token_list,
         token_column=args.token_column,
         is_inference=False,
+        prompt_path=config.get("prompt_path", None),
         allow_cache=config.get("allow_cache", False),  # keep compatibility
     )
     logging.info(f"The number of development files = {len(dev_dataset)}.")

@@ -28,6 +28,7 @@ class TTSDataset(Dataset):
         token_list_path,
         token_column,
         is_inference,
+        prompt_path=None,
         return_utt_id=False,
         allow_cache=False,
     ):
@@ -47,6 +48,7 @@ class TTSDataset(Dataset):
         self.feat_list = feat_list
         self.token_column = token_column
         self.is_inference = is_inference
+        self.prompt_path = prompt_path
 
         # read dataset
         self.dataset, _ = read_csv(csv_path, dict_reader=True)
@@ -130,14 +132,7 @@ class TTSDataset(Dataset):
                 item[feat_name] = normalized_feat
         
         if "encodec" in self.feat_list:
-            # get random 3 second prompt
-            #spk_id = utt_id.split("_")[0]  # Get the prefix of the utt_id
-            #spk_files = [f for f in self.mel_files if spk_id in f]
-            #assert len(spk_files) > 0, f"No files found for speaker {spk_id}"
-            #mel_path = np.random.choice(self.mel_files)
-            #logging.info(f"mel_path: {mel_path}")
-            mel_path = "/data/group1/z44568r/toolkits2/jatts/egs/hificaptain_jp_female/tts3/dump/dev/feats/Seikatsu01_C-U__000100.h5"
-            prompts = read_hdf5(str(mel_path), "encodec")
+            prompts = read_hdf5(str(self.prompt_path), "encodec")
             prompts = prompts.transpose(1, 0)
             max_prompt_length = 400
             if prompts.shape[0] > max_prompt_length:
