@@ -9,13 +9,15 @@ import logging
 import os
 from multiprocessing import Manager
 from pathlib import Path
+from tqdm import tqdm
 
 import numpy as np
 from jatts.utils import read_csv, read_hdf5
 from jatts.utils.token_id_converter import TokenIDConverter
 from sklearn.preprocessing import StandardScaler
-from torch.utils.data import Dataset
+from torch.utils.data import Dataset, Sampler, SequentialSampler
 
+import torch
 
 class TTSDataset(Dataset):
     """PyTorch compatible dataset for TTS."""
@@ -28,6 +30,8 @@ class TTSDataset(Dataset):
         token_list_path,
         token_column,
         is_inference,
+        sampling_rate = None,
+        hop_size = None,
         return_utt_id=False,
         allow_cache=False,
     ):
@@ -47,6 +51,8 @@ class TTSDataset(Dataset):
         self.feat_list = feat_list
         self.token_column = token_column
         self.is_inference = is_inference
+        self.sampling_rate = sampling_rate
+        self.hop_size = hop_size
 
         # read dataset
         self.dataset, _ = read_csv(csv_path, dict_reader=True)
@@ -123,6 +129,18 @@ class TTSDataset(Dataset):
 
                 item[feat_name] = normalized_feat
 
+        # load prompt for E2-TTS
+        if "prompt_sample_id" in item:
+            item["prompt_wav_path"] = item["prompt_wav_path"]
+            prompt_phonemes = [p for p in item["prompt_phonemes"].split(" ") if p != ""]
+            prompt_indices = np.array(
+                self.token_id_converter.tokens2ids(prompt_phonemes), dtype=np.int64
+            )
+            item["prompt_phonemes"] = prompt_phonemes
+            item["prompt_indices"] = prompt_indices
+            item["prompt_start"] = item["prompt_start"]
+            item["prompt_end"] = item["prompt_end"]
+
         if self.allow_cache:
             self.caches[idx] = item
 
@@ -136,3 +154,98 @@ class TTSDataset(Dataset):
 
         """
         return len(self.dataset)
+
+    def get_frame_len(self, index):
+        """Get the number of frames for the specified index.
+        Args:
+            index (int): Index of the item.
+        Returns:
+            int: The number of frames.
+        """
+        item = self.dataset[index]
+        return (float(item["end"]) - float(item["start"])) * self.sampling_rate / self.hop_size
+
+
+# Dynamic Batch Sampler
+class DynamicBatchSampler(Sampler[list[int]]):
+    """Extension of Sampler that will do the following:
+    1.  Change the batch size (essentially number of sequences)
+        in a batch to ensure that the total number of frames are less
+        than a certain threshold.
+    2.  Make sure the padding efficiency in the batch is high.
+    3.  Shuffle batches each epoch while maintaining reproducibility.
+    """
+
+    def __init__(
+        self,
+        dataset,
+        frames_threshold: int,
+        max_samples=0,
+        random_seed=None,
+        drop_residual: bool = False,
+    ):
+
+        self.sampler = SequentialSampler(dataset)
+        self.frames_threshold = frames_threshold
+        self.max_samples = max_samples
+        self.random_seed = random_seed
+        self.epoch = 0
+
+        indices, batches = [], []
+        data_source = self.sampler.data_source
+
+        for idx in tqdm(
+            self.sampler,
+            desc="Sorting with sampler... if slow, check whether dataset is provided with duration",
+        ):
+            indices.append((idx, data_source.get_frame_len(idx)))
+        indices.sort(key=lambda elem: elem[1])
+
+        batch = []
+        batch_frames = 0
+        for idx, frame_len in tqdm(
+            indices,
+            desc=f"Creating dynamic batches with {frames_threshold} audio frames per gpu",
+        ):
+            if batch_frames + frame_len <= self.frames_threshold and (
+                max_samples == 0 or len(batch) < max_samples
+            ):
+                batch.append(idx)
+                batch_frames += frame_len
+            else:
+                if len(batch) > 0:
+                    batches.append(batch)
+                if frame_len <= self.frames_threshold:
+                    batch = [idx]
+                    batch_frames = frame_len
+                else:
+                    batch = []
+                    batch_frames = 0
+
+        if not drop_residual and len(batch) > 0:
+            batches.append(batch)
+
+        del indices
+        self.batches = batches
+
+        # Ensure even batches with accelerate BatchSamplerShard cls under frame_per_batch setting
+        self.drop_last = True
+
+    def set_epoch(self, epoch: int) -> None:
+        """Sets the epoch for this sampler."""
+        self.epoch = epoch
+
+    def __iter__(self):
+        # Use both random_seed and epoch for deterministic but different shuffling per epoch
+        if self.random_seed is not None:
+            g = torch.Generator()
+            g.manual_seed(self.random_seed + self.epoch)
+            # Use PyTorch's random permutation for better reproducibility across PyTorch versions
+            indices = torch.randperm(len(self.batches), generator=g).tolist()
+            batches = [self.batches[i] for i in indices]
+        else:
+            batches = self.batches
+        return iter(batches)
+
+    def __len__(self):
+        return len(self.batches)

@@ -1,0 +1,102 @@
+###########################################################
+#                FEATURE EXTRACTION SETTING               #
+###########################################################
+sampling_rate: 24000     # Sampling rate.
+fft_size: 2048           # FFT size.
+hop_size: 300            # Hop size.
+win_length: null         # Window length.
+                         # If set to null, it will be the same as fft_size.
+window: "hann"           # Window function.
+num_mels: 80             # Number of mel basis.
+fmin: 80                 # Minimum freq in mel basis calculation.
+fmax: 7600               # Maximum frequency in mel basis calculation.
+global_gain_scale: 1.0   # Will be multiplied to all of waveform.
+
+feat_list: ["mel"]
+out_feat_type: mel
+
+###########################################################
+#              NETWORK ARCHITECTURE SETTING               #
+###########################################################
+model_type: VITS
+model_params:
+    odim: 80
+    adim: 384         # attention dimension
+    aheads: 2         # number of attention heads
+    dlayers: 4        # number of decoder layers
+    dunits: 1536      # number of decoder ff units
+    decoder_positionwise_layer_type: conv1d   # type of position-wise layer
+    decoder_positionwise_conv_kernel_size: 3  # kernel size of position wise conv layer
+    duration_predictor_layers: 2      # number of layers of duration predictor
+    duration_predictor_chans: 256     # number of channels of duration predictor
+    duration_predictor_kernel_size: 3 # filter size of duration predictor
+    use_masking: True                 # whether to apply masking for padded part in loss calculation
+    # use_scaled_pos_enc: True          # whether to use scaled positional encoding
+    decoder_normalize_before: True    # whether to perform layer normalization before the input
+    reduction_factor: 1               # reduction factor
+    use_macaron_style_in_conformer: true         # whether to use macaron style in conformer
+    use_cnn_in_conformer: true                   # whether to use CNN in conformer
+    conformer_dec_kernel_size: 31                # kernel size in CNN module of conformer-based decoder
+    init_type: xavier_uniform                    # initialization type
+    transformer_dec_dropout_rate: 0.2            # dropout rate for transformer decoder layer
+    transformer_dec_positional_dropout_rate: 0.2 # dropout rate for transformer decoder positional encoding
+    transformer_dec_attn_dropout_rate: 0.2       # dropout rate for transformer decoder attention layer
+
+###########################################################
+#                      LOSS SETTING                       #
+###########################################################
+trainer_type: VITSTrainer
+collater_type: FastSpeech2Collater
+criterions:
+    "MelLoss":
+        _type: L1Loss
+    "KLDivergenceLoss": {}
+    "ForwardSumLoss": {}
+    "DurationPredictorLoss": {}
+lambda_align: 2.0
+lambda_mel: 10.0
+
+###########################################################
+#                   INFERENCE SETTING                     #
+###########################################################
+vocoder:
+    checkpoint: ./downloads/hfg/checkpoint-2500000steps.pkl
+    config: ./downloads/hfg/config.yml
+    stats: ./downloads/hfg/stats.h5
+noise_scale: 0.667
+
+###########################################################
+#                  DATA LOADER SETTING                    #
+###########################################################
+batch_size: 8                   # Batch size.
+pin_memory: true                # Whether to pin memory in Pytorch DataLoader.
+num_workers: 2                  # Number of workers in Pytorch DataLoader.
+allow_cache: true               # Whether to allow cache in dataset. If true, it requires cpu memory.
+gradient_accumulate_steps: 4    # Number of forward steps before a backward step. Used when OOM happens.
+
+###########################################################
+#             OPTIMIZER & SCHEDULER SETTING               #
+###########################################################
+optimizer_type: Adam
+optimizer_params:
+    lr: 0.0008              # Learning rate := lr (default = 1.0) / model_size**0.5 / warmup_steps**0.5
+                            # See https://github.com/espnet/espnet/blob/master/espnet2/schedulers/noam_lr.py#L49-L50
+grad_norm: 1.0              # Gradient norm.
+scheduler: warmuplr
+scheduler_params:
+    warmup_steps: 4000      # Scheduler warm up step
+
+###########################################################
+#                    INTERVAL SETTING                     #
+###########################################################
+train_max_steps: 100000     # Number of training steps.
+dp_train_start_steps: 10000 # Duration predictor training starting step. Default set to 0.
+bin_loss_start_steps: 15000 # Duration predictor training starting step. Default set to 0.
+save_interval_steps: 1000   # Interval steps to save checkpoint.
+eval_interval_steps: 100    # Interval steps to evaluate the network.
+log_interval_steps: 10      # Interval steps to record the training log.
+
+###########################################################
+#                     OTHER SETTING                       #
+###########################################################
+num_save_intermediate_results: 4  # Number of results to be saved as intermediate results.

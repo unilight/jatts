@@ -1,0 +1,92 @@
+###########################################################
+#                FEATURE EXTRACTION SETTING               #
+###########################################################
+sampling_rate: 48000     # Sampling rate.
+fft_size: 2048           # FFT size.
+hop_size: 512            # Hop size.
+win_length: null         # Window length.
+                         # If set to null, it will be the same as fft_size.
+window: "hann"           # Window function.
+num_mels: 80             # Number of mel basis.
+fmin: 0                 # Minimum freq in mel basis calculation.
+fmax: null               # Maximum frequency in mel basis calculation.
+global_gain_scale: 1.0   # Will be multiplied to all of waveform.
+
+feat_list: ["mel"]
+out_feat_type: mel
+
+###########################################################
+#              NETWORK ARCHITECTURE SETTING               #
+###########################################################
+model_type: E2TTS
+model_params:
+    odim: 80
+
+    backbone: UNetT
+    dim: 1024
+    depth: 24
+    heads: 16
+    ff_mult: 4
+    # text_mask_padding: False
+    pe_attn_head: 1
+
+###########################################################
+#                      LOSS SETTING                       #
+###########################################################
+trainer_type: E2TTSTrainer
+collater_type: FastSpeech2Collater
+criterions:
+
+###########################################################
+#                   INFERENCE SETTING                     #
+###########################################################
+vocoder:
+    checkpoint: ./downloads/pwg_jp_female/checkpoint-400000steps.pkl
+    config: ./downloads/pwg_jp_female/config.yml
+    stats: ./downloads/pwg_jp_female/stats.h5
+nfe_step: 32
+cfg_strength: 2.0
+sway_sampling_coef: -1.0
+max_duration: 3000 # 48000/512 * 32sec = 3000
+
+###########################################################
+#                  DATA LOADER SETTING                    #
+###########################################################
+sampler_random_seed: 666        # Random seed for sampler.
+batch_size_per_gpu: 8640        # Batch size per GPU.
+gradient_accumulate_steps: 4   # Number of forward steps before a backward step. Used when OOM happens.
+                                # 4 GPUs, 8640 * 4 * 4 = 138240
+max_samples: 32                 # max sequences per batch if use frame-wise batch_size. we set 32 for small models, 64 for base models
+pin_memory: true                # Whether to pin memory in Pytorch DataLoader.
+num_workers: 2                  # Number of workers in Pytorch DataLoader.
+allow_cache: true               # Whether to allow cache in dataset. If true, it requires cpu memory.
+
+###########################################################
+#             OPTIMIZER & SCHEDULER SETTING               #
+###########################################################
+optimizer_type: AdamW
+optimizer_params:
+    lr: 7.5e-5              # Learning rate := lr (default = 1.0) / model_size**0.5 / warmup_steps**0.5
+                            # See https://github.com/espnet/espnet/blob/master/espnet2/schedulers/noam_lr.py#L49-L50
+grad_norm: 1.0              # Gradient norm.
+scheduler_type: E2TTSSequentialLR
+scheduler_params:
+    warmup_steps: 20000
+    decay_steps: 980000           # this must be train_max_steps - warmup_steps
+    warmup_start_factor: 1.0e-8
+    warmup_end_factor: 1.0
+    decay_start_factor: 1.0
+    decay_end_factor: 1.0e-8
+
+###########################################################
+#                    INTERVAL SETTING                     #
+###########################################################
+train_max_steps: 1000000     # Number of training steps.
+save_interval_steps: 10000   # Interval steps to save checkpoint.
+eval_interval_steps: 1000    # Interval steps to evaluate the network.
+log_interval_steps: 10       # Interval steps to record the training log.
+
+###########################################################
+#                     OTHER SETTING                       #
+###########################################################
+num_save_intermediate_results: 4  # Number of results to be saved as intermediate results.

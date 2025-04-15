@@ -10,7 +10,6 @@ fi
 
 MAIN_ROOT=$PWD/../../..
 export PATH=$MAIN_ROOT/jatts/bin:$PATH
-export PYTHONPATH=$MAIN_ROOT:$PYTHONPATH
 
 # python related
 export OMP_NUM_THREADS=1

@@ -4,39 +4,35 @@
 # Copyright 2025 Nagoya University (Wen-Chin Huang)
 #  Apache 2.0  (http://www.apache.org/licenses/LICENSE-2.0)
 
-"""Matcha-TTS with Monotonic Alignment Search (MAS)."""
+"""VITS with mel-spectrogram output (i.e., without GAN)"""
 
 import logging
 from typing import Dict, Optional, Sequence, Tuple
 
 import torch
 import torch.nn.functional as F
+from jatts.modules.alignments import (AlignmentModule, average_by_duration,
+                                      viterbi_decode)
 from jatts.modules.conformer.encoder import Encoder as ConformerEncoder
 from jatts.modules.duration_predictor import DurationPredictor
 from jatts.modules.initialize import initialize
-from jatts.modules.length_regulator import LengthRegulator, GaussianUpsampling
+from jatts.modules.length_regulator import GaussianUpsampling, LengthRegulator
 from jatts.modules.matchatts.flow_matching import CFM
-from jatts.modules.positional_encoding import (
-    PositionalEncoding,
-    ScaledPositionalEncoding,
-)
+from jatts.modules.positional_encoding import (PositionalEncoding,
+                                               ScaledPositionalEncoding)
+from jatts.modules.transformer.subsampling import Conv2dSubsampling
 from jatts.modules.utils import make_non_pad_mask, make_pad_mask
 from jatts.modules.variance_predictor import VariancePredictor
-from jatts.modules.transformer.subsampling import Conv2dSubsampling
-from jatts.modules.alignments import (
-    AlignmentModule,
-    average_by_duration,
-    viterbi_decode
-)
-
+from jatts.modules.vits.posterior_encoder import PosteriorEncoder
+from jatts.modules.vits.residual_coupling import ResidualAffineCouplingBlock
+from jatts.modules.vits.text_encoder import TextEncoder
 from typeguard import typechecked
 
 # from espnet2.tts.gst.style_encoder import StyleEncoder # in the future
 
-MAX_DP_OUTPUT = 10
 
-class MatchaTTS_MAS(torch.nn.Module):
-    """Matcha-TTS module with monotonic alignment search (MAS).
+class VITS(torch.nn.Module):
+    """VITS module
 
     This is a module of Matcha-TTS described in `Matcha-TTS: A fast TTS
     architecture with conditional flow matching`_,
@@ -55,43 +51,61 @@ class MatchaTTS_MAS(torch.nn.Module):
         odim: int,
         adim: int = 384,
         aheads: int = 4,
-        elayers: int = 6,
-        eunits: int = 1536,
-        positionwise_layer_type: str = "conv1d",
-        positionwise_conv_kernel_size: int = 1,
-        use_scaled_pos_enc: bool = True,
-        use_batch_norm: bool = True,
-        encoder_normalize_before: bool = True,
-        encoder_concat_after: bool = False,
         reduction_factor: int = 1,
-        encoder_type: str = "transformer",
-        transformer_enc_dropout_rate: float = 0.1,
-        transformer_enc_positional_dropout_rate: float = 0.1,
-        transformer_enc_attn_dropout_rate: float = 0.1,
-        # only for conformer
+        # text encoder
+        text_encoder_attention_heads: int = 2,
+        text_encoder_ffn_expand: int = 4,
+        text_encoder_blocks: int = 6,
+        text_encoder_positionwise_layer_type: str = "conv1d",
+        text_encoder_positionwise_conv_kernel_size: int = 1,
+        text_encoder_positional_encoding_layer_type: str = "rel_pos",
+        text_encoder_self_attention_layer_type: str = "rel_selfattn",
+        text_encoder_activation_type: str = "swish",
+        text_encoder_normalize_before: bool = True,
+        text_encoder_dropout_rate: float = 0.1,
+        text_encoder_positional_dropout_rate: float = 0.0,
+        text_encoder_attention_dropout_rate: float = 0.0,
+        text_encoder_conformer_kernel_size: int = 7,
+        use_macaron_style_in_text_encoder: bool = True,
+        use_conformer_conv_in_text_encoder: bool = True,
+        # conformer decoder related
+        dlayers: int = 6,
+        dunits: int = 1536,
+        decoder_positionwise_layer_type: str = "conv1d",
+        decoder_positionwise_conv_kernel_size: int = 1,
+        decoder_normalize_before: bool = True,
+        decoder_concat_after: bool = False,
+        transformer_dec_dropout_rate: float = 0.1,
+        transformer_dec_positional_dropout_rate: float = 0.1,
+        transformer_dec_attn_dropout_rate: float = 0.1,
         conformer_rel_pos_type: str = "legacy",
         conformer_pos_enc_layer_type: str = "rel_pos",
         conformer_self_attn_layer_type: str = "rel_selfattn",
         conformer_activation_type: str = "swish",
         use_macaron_style_in_conformer: bool = True,
         use_cnn_in_conformer: bool = True,
-        zero_triu: bool = False,
-        conformer_enc_kernel_size: int = 7,
         conformer_dec_kernel_size: int = 31,
-        # decoder related
-        decoder_channels=[256, 256],
-        decoder_dropout: float = 0.05,
-        decoder_attention_head_dim: int = 64,
-        decoder_n_blocks: int = 1,
-        decoder_num_mid_blocks: int = 2,
-        decoder_num_heads: int = 2,
-        decoder_act_fn: str = "snakebeta",
         # duration predictor
         duration_predictor_type: str = "deterministic",
         duration_predictor_layers: int = 2,
         duration_predictor_chans: int = 384,
         duration_predictor_kernel_size: int = 3,
         duration_predictor_dropout_rate: float = 0.1,
+        # posterior encoder related
+        posterior_encoder_kernel_size: int = 5,
+        posterior_encoder_layers: int = 16,
+        posterior_encoder_stacks: int = 1,
+        posterior_encoder_base_dilation: int = 1,
+        posterior_encoder_dropout_rate: float = 0.0,
+        use_weight_norm_in_posterior_encoder: bool = True,
+        # flow related
+        flow_flows: int = 4,
+        flow_kernel_size: int = 5,
+        flow_base_dilation: int = 1,
+        flow_layers: int = 4,
+        flow_dropout_rate: float = 0.0,
+        use_weight_norm_in_flow: bool = True,
+        use_only_mean_in_flow: bool = True,
         # extra embedding related
         spks: Optional[int] = None,
         spk_embed_dim: Optional[int] = None,
@@ -111,7 +125,7 @@ class MatchaTTS_MAS(torch.nn.Module):
         use_masking: bool = False,
         use_weighted_masking: bool = False,
     ):
-        """Initialize FastSpeech2 module.
+        """Initialize VITS module.
 
         Args:
             idim (int): Dimension of the inputs.
@@ -176,92 +190,35 @@ class MatchaTTS_MAS(torch.nn.Module):
         self.odim = odim
         self.eos = idim - 1
         self.reduction_factor = reduction_factor
-        self.encoder_type = encoder_type
         self.duration_predictor_type = duration_predictor_type
-        self.use_scaled_pos_enc = use_scaled_pos_enc
         self.use_gst = use_gst
 
         # use idx 0 as padding idx
         self.padding_idx = 0
 
-        # get positional encoding class
-        pos_enc_class = (
-            ScaledPositionalEncoding if self.use_scaled_pos_enc else PositionalEncoding
-        )
-
         # MAS related
         self.viterbi_func = viterbi_decode
 
-        # check relative positional encoding compatibility
-        if "conformer" in [encoder_type]:
-            if conformer_rel_pos_type == "legacy":
-                if conformer_pos_enc_layer_type == "rel_pos":
-                    conformer_pos_enc_layer_type = "legacy_rel_pos"
-                    logging.warning(
-                        "Fallback to conformer_pos_enc_layer_type = 'legacy_rel_pos' "
-                        "due to the compatibility. If you want to use the new one, "
-                        "please use conformer_pos_enc_layer_type = 'latest'."
-                    )
-                if conformer_self_attn_layer_type == "rel_selfattn":
-                    conformer_self_attn_layer_type = "legacy_rel_selfattn"
-                    logging.warning(
-                        "Fallback to "
-                        "conformer_self_attn_layer_type = 'legacy_rel_selfattn' "
-                        "due to the compatibility. If you want to use the new one, "
-                        "please use conformer_pos_enc_layer_type = 'latest'."
-                    )
-            elif conformer_rel_pos_type == "latest":
-                assert conformer_pos_enc_layer_type != "legacy_rel_pos"
-                assert conformer_self_attn_layer_type != "legacy_rel_selfattn"
-            else:
-                raise ValueError(f"Unknown rel_pos_type: {conformer_rel_pos_type}")
-
         # define encoder
-        encoder_input_layer = torch.nn.Embedding(
-            num_embeddings=idim, embedding_dim=adim, padding_idx=self.padding_idx
+        self.text_encoder = TextEncoder(
+            vocabs=idim,
+            attention_dim=adim,
+            attention_heads=text_encoder_attention_heads,
+            linear_units=adim * text_encoder_ffn_expand,
+            blocks=text_encoder_blocks,
+            positionwise_layer_type=text_encoder_positionwise_layer_type,
+            positionwise_conv_kernel_size=text_encoder_positionwise_conv_kernel_size,
+            positional_encoding_layer_type=text_encoder_positional_encoding_layer_type,
+            self_attention_layer_type=text_encoder_self_attention_layer_type,
+            activation_type=text_encoder_activation_type,
+            normalize_before=text_encoder_normalize_before,
+            dropout_rate=text_encoder_dropout_rate,
+            positional_dropout_rate=text_encoder_positional_dropout_rate,
+            attention_dropout_rate=text_encoder_attention_dropout_rate,
+            conformer_kernel_size=text_encoder_conformer_kernel_size,
+            use_macaron_style=use_macaron_style_in_text_encoder,
+            use_conformer_conv=use_conformer_conv_in_text_encoder,
         )
-        if encoder_type == "transformer":
-            self.encoder = TransformerEncoder(
-                idim=idim,
-                attention_dim=adim,
-                attention_heads=aheads,
-                linear_units=eunits,
-                num_blocks=elayers,
-                input_layer=encoder_input_layer,
-                dropout_rate=transformer_enc_dropout_rate,
-                positional_dropout_rate=transformer_enc_positional_dropout_rate,
-                attention_dropout_rate=transformer_enc_attn_dropout_rate,
-                pos_enc_class=pos_enc_class,
-                normalize_before=encoder_normalize_before,
-                concat_after=encoder_concat_after,
-                positionwise_layer_type=positionwise_layer_type,
-                positionwise_conv_kernel_size=positionwise_conv_kernel_size,
-            )
-        elif encoder_type == "conformer":
-            self.encoder = ConformerEncoder(
-                idim=idim,
-                attention_dim=adim,
-                attention_heads=aheads,
-                linear_units=eunits,
-                num_blocks=elayers,
-                input_layer=encoder_input_layer,
-                dropout_rate=transformer_enc_dropout_rate,
-                positional_dropout_rate=transformer_enc_positional_dropout_rate,
-                attention_dropout_rate=transformer_enc_attn_dropout_rate,
-                normalize_before=encoder_normalize_before,
-                concat_after=encoder_concat_after,
-                positionwise_layer_type=positionwise_layer_type,
-                positionwise_conv_kernel_size=positionwise_conv_kernel_size,
-                macaron_style=use_macaron_style_in_conformer,
-                pos_enc_layer_type=conformer_pos_enc_layer_type,
-                selfattention_layer_type=conformer_self_attn_layer_type,
-                activation_type=conformer_activation_type,
-                use_cnn_module=use_cnn_in_conformer,
-                cnn_module_kernel=conformer_enc_kernel_size,
-                zero_triu=zero_triu,
-            )
-        else:
-            raise ValueError(f"{encoder_type} is not supported.")
 
         # define GST
         if self.use_gst:
@@ -295,7 +252,30 @@ class MatchaTTS_MAS(torch.nn.Module):
             else:
                 self.projection = torch.nn.Linear(adim + self.spk_embed_dim, adim)
 
-        self.encoder_proj = torch.nn.Linear(adim, odim * reduction_factor)
+        self.posterior_encoder = PosteriorEncoder(
+            in_channels=odim,
+            out_channels=adim,
+            hidden_channels=adim,
+            kernel_size=posterior_encoder_kernel_size,
+            layers=posterior_encoder_layers,
+            stacks=posterior_encoder_stacks,
+            base_dilation=posterior_encoder_base_dilation,
+            global_channels=spk_embed_dim,  # NOTE(unilight) 20250408: do we want to use spk_embed_dim as global_channels?
+            dropout_rate=posterior_encoder_dropout_rate,
+            use_weight_norm=use_weight_norm_in_posterior_encoder,
+        )
+        self.flow = ResidualAffineCouplingBlock(
+            in_channels=adim,
+            hidden_channels=adim,
+            flows=flow_flows,
+            kernel_size=flow_kernel_size,
+            base_dilation=flow_base_dilation,
+            layers=flow_layers,
+            global_channels=spk_embed_dim,  # NOTE(unilight) 20250408: do we want to use spk_embed_dim as global_channels?
+            dropout_rate=flow_dropout_rate,
+            use_weight_norm=use_weight_norm_in_flow,
+            use_only_mean=use_only_mean_in_flow,
+        )
 
         # define duration predictor
         if duration_predictor_type == "deterministic":
@@ -328,17 +308,30 @@ class MatchaTTS_MAS(torch.nn.Module):
         self.length_regulator = GaussianUpsampling()
 
         # define decoder
-        self.decoder = CFM(
-            in_channels=2 * odim * reduction_factor,  # because we concat x and mu
-            out_channel=odim * reduction_factor,
-            channels=decoder_channels,
-            dropout=decoder_dropout,
-            attention_head_dim=decoder_attention_head_dim,
-            n_blocks=decoder_n_blocks,
-            num_mid_blocks=decoder_num_mid_blocks,
-            num_heads=decoder_num_heads,
-            act_fn=decoder_act_fn,
+        self.decoder = ConformerEncoder(
+            idim=0,
+            attention_dim=adim,
+            attention_heads=aheads,
+            linear_units=dunits,
+            num_blocks=dlayers,
+            input_layer=None,
+            dropout_rate=transformer_dec_dropout_rate,
+            positional_dropout_rate=transformer_dec_positional_dropout_rate,
+            attention_dropout_rate=transformer_dec_attn_dropout_rate,
+            normalize_before=decoder_normalize_before,
+            concat_after=decoder_concat_after,
+            positionwise_layer_type=decoder_positionwise_layer_type,
+            positionwise_conv_kernel_size=decoder_positionwise_conv_kernel_size,
+            macaron_style=use_macaron_style_in_conformer,
+            pos_enc_layer_type=conformer_pos_enc_layer_type,
+            selfattention_layer_type=conformer_self_attn_layer_type,
+            activation_type=conformer_activation_type,
+            use_cnn_module=use_cnn_in_conformer,
+            cnn_module_kernel=conformer_dec_kernel_size,
         )
+
+        # define final projection
+        self.feat_out = torch.nn.Linear(adim, odim * reduction_factor)
 
         # initialize parameters
         self._reset_parameters(
@@ -352,8 +345,6 @@ class MatchaTTS_MAS(torch.nn.Module):
         text_lengths: torch.Tensor,
         feats: torch.Tensor,
         feats_lengths: torch.Tensor,
-        durations: torch.Tensor = None, # dummy
-        durations_lengths: torch.Tensor = None, # dummy
         spembs: Optional[torch.Tensor] = None,
         sids: Optional[torch.Tensor] = None,
         lids: Optional[torch.Tensor] = None,
@@ -378,13 +369,19 @@ class MatchaTTS_MAS(torch.nn.Module):
             Tensor: Weight value if not joint training else model outputs.
 
         """
-        
         text = text[:, : text_lengths.max()]  # for data-parallel
         feats = feats[:, : feats_lengths.max()]  # for data-parallel
 
         batch_size = text.size(0)
+
+        # Add eos at the last of sequence
+        # xs = F.pad(text, [0, 1], "constant", self.padding_idx)
+        # for i, l in enumerate(text_lengths):
+        # xs[i, l] = self.eos
+        # ilens = text_lengths + 1
         xs = text
         ilens = text_lengths
+
         ys = feats
         olens = feats_lengths
 
@@ -422,28 +419,27 @@ class MatchaTTS_MAS(torch.nn.Module):
         lids: Optional[torch.Tensor] = None,
         n_timesteps: int = None,
         temperature: float = None,
+        noise_scale: float = 0.667,
         is_inference: bool = False,
     ) -> Sequence[torch.Tensor]:
 
+        ret = {}
+
         # forward encoder
-        x_masks = self._source_mask(ilens)
-        hs, _ = self.encoder(xs, x_masks)  # (B, T_text, adim)
+        # hs, m_p, logs_p have shape [B, dim, T]
+        hs, m_p, logs_p, x_mask = self.text_encoder(xs, ilens)
 
         # integrate with GST
-        if self.use_gst:
-            style_embs = self.gst(ys)
-            hs = hs + style_embs.unsqueeze(1)
-
-        # integrate with SID and LID embeddings
-        if self.spks is not None:
-            sid_embs = self.sid_emb(sids.view(-1))
-            hs = hs + sid_embs.unsqueeze(1)
+        # NOTE(unilight) 20250408: think about how to integrate with GST in the future
+        # if self.use_gst:
+        #     style_embs = self.gst(ys)
+        #     hs = hs + style_embs.unsqueeze(1)
 
         # integrate speaker embedding
         if self.spk_embed_dim is not None:
             hs = self._integrate_with_spk_embed(hs, spembs)
 
-        # forward duration predictor and variance predictors
+        # alignment search, VAE, flow
         d_masks = make_pad_mask(ilens).to(xs.device)
         if is_inference:
             if ys is None:
@@ -451,14 +447,12 @@ class MatchaTTS_MAS(torch.nn.Module):
                 ds = None
                 bin_loss = 0.0
             else:
-                log_p_attn = self.alignment_module(hs, ys, d_masks)
-                ds, bin_loss = self.viterbi_func(
-                    log_p_attn, ilens, olens
-                )
+                log_p_attn = self.alignment_module(hs.transpose(1, 2), ys, d_masks)
+                ds, bin_loss = self.viterbi_func(log_p_attn, ilens, olens)
 
             # forward duration predictor
             if self.duration_predictor_type == "deterministic":
-                d_outs = self.duration_predictor.inference(hs, None)
+                d_outs = self.duration_predictor.inference(hs.transpose(1, 2), None)
             elif self.duration_predictor_type == "stochastic":
                 _h_masks = make_non_pad_mask(ilens).to(hs.device)
                 d_outs = self.duration_predictor(
@@ -470,18 +464,37 @@ class MatchaTTS_MAS(torch.nn.Module):
 
             # upsampling
             d_masks = make_non_pad_mask(ilens).to(d_outs.device)
-            hs = self.length_regulator(hs, d_outs, None, d_masks)  # (B, T_feats, adim)
+            m_p = self.length_regulator(
+                m_p.transpose(1, 2), d_outs, None, d_masks
+            ).transpose(1, 2)
+            logs_p = self.length_regulator(
+                logs_p.transpose(1, 2), d_outs, None, d_masks
+            ).transpose(1, 2)
+
+            # decoder
+            z_p = (
+                m_p + torch.randn_like(m_p) * torch.exp(logs_p) * noise_scale
+            )  # [B, dim, T]
+            y_lengths = torch.clamp_min(torch.sum(d_outs), 1).long().unsqueeze(0)
+            y_mask = make_non_pad_mask(y_lengths).unsqueeze(1).to(z_p.device)
+            z = self.flow(z_p, y_mask, g=spembs, inverse=True)
         else:
+            # forward posterior encoder
+            z, m_q, logs_q, y_mask = self.posterior_encoder(
+                ys.transpose(1, 2), olens, g=spembs
+            )  # NOTE(unilight) 20250408: right now the only condition is spembs
+
+            # forward flow
+            z_p = self.flow(z, y_mask, g=spembs)  # (B, H, T_feats)
+
             # forward alignment module and obtain duration
-            log_p_attn = self.alignment_module(hs, ys, d_masks)
-            ds, bin_loss = self.viterbi_func(
-                log_p_attn, ilens, olens
-            )
+            log_p_attn = self.alignment_module(hs.transpose(1, 2), ys, d_masks)
+            ds, bin_loss = self.viterbi_func(log_p_attn, ilens, olens)
 
             # forward duration predictor
             h_masks = make_non_pad_mask(ilens).to(hs.device)
             if self.duration_predictor_type == "deterministic":
-                d_outs = self.duration_predictor(hs, h_masks)
+                d_outs = self.duration_predictor(hs.transpose(1, 2), h_masks)
             elif self.duration_predictor_type == "stochastic":
                 dur_nll = self.duration_predictor(
                     hs.transpose(1, 2),  # (B, T, C)
@@ -491,13 +504,21 @@ class MatchaTTS_MAS(torch.nn.Module):
                 dur_nll = dur_nll / torch.sum(h_masks)
                 ret["dur_nll"] = dur_nll
 
-            # upsampling (expand)
-            hs = self.length_regulator(
-                hs,
+            m_p = self.length_regulator(
+                m_p.transpose(1, 2),
                 ds,
                 make_non_pad_mask(olens).to(hs.device),
                 make_non_pad_mask(ilens).to(ds.device),
-            )  # (B, T_feats, adim)
+            ).transpose(1, 2)
+            logs_p = self.length_regulator(
+                logs_p.transpose(1, 2),
+                ds,
+                make_non_pad_mask(olens).to(hs.device),
+                make_non_pad_mask(ilens).to(ds.device),
+            ).transpose(1, 2)
+
+            ret["m_q"] = m_q  # from posterior encoder
+            ret["logs_q"] = logs_q  # from posterior encoder
 
         # forward decoder
         if olens is not None and not is_inference:
@@ -512,43 +533,43 @@ class MatchaTTS_MAS(torch.nn.Module):
                 olens_in = olens
             h_masks = self._source_mask(olens_in)
         else:
-            # Matcha-TTS requires mask during inference too.
-            # So we build a all-one mask using predicted duration
-            olens_in = torch.clamp_min(d_outs.sum().unsqueeze(0), 1).long()
-            h_masks = self._source_mask(olens_in)
+            h_masks = None
+            olens_in = olens
 
-        # project to odim
-        hs = self.encoder_proj(hs)
+        # decoder forward
+        zs, _ = self.decoder(z.transpose(1, 2), h_masks)  # (B, T_feats, adim)
+        outs = self.feat_out(zs).view(zs.size(0), -1, self.odim)  # (B, T_feats, odim)
 
-        # since there is 2x upsampling in the decoder, truncate length to multiply of 2
-        olens_in = olens_in.new([olen - olen % 2 for olen in olens_in])
-        max_olen_in = max(olens_in)
-        h_masks = self._source_mask(olens_in)
-        hs = hs[:, :max_olen_in]
-        if ys is not None:
-            ys = ys[:, :max_olen_in]
+        # decoder reconstruction (during inference)
+        if is_inference and ys is not None:
+            z_bar, _, _, _ = self.posterior_encoder(
+                ys.transpose(1, 2), olens, g=spembs
+            )  # NOTE(unilight) 20250408: right now the only condition is spembs
+            zs_bar, _ = self.decoder(
+                z_bar.transpose(1, 2), h_masks
+            )  # (B, T_feats, adim)
+            outs_bar = self.feat_out(zs_bar).view(
+                zs_bar.size(0), -1, self.odim
+            )  # (B, T_feats, odim)
+            ret["outs_bar"] = outs_bar
 
         # return ys, hs and h_masks for prior loss calculation
-        ret = {
+        ret = ret | {
+            "outs": outs,
             "d_outs": d_outs,
             "ys": ys,
             "hs": hs,
             "olens_in": olens_in,
             "bin_loss": bin_loss,
             "log_p_attn": log_p_attn,
-            "ds": ds
+            "ds": ds,
+            # kl loss related
+            "m_p": m_p,  # from text encoder
+            "logs_p": logs_p,  # from text encoder
+            "z": z,  # from posterior encoder
+            "y_mask": y_mask,  # from posterior encoder
+            "z_p": z_p,  # from flow
         }
-
-        # decoder forward. Note that the input to the decoder should be [B, feat_dim, time]
-        if is_inference:
-            ret["feat_gen"] = self.decoder.inference(
-                hs.permute(0, 2, 1), h_masks, n_timesteps, temperature
-            )
-        else:
-            cfm_loss, _ = self.decoder.compute_loss(
-                x1=ys.permute(0, 2, 1), mask=h_masks, mu=hs.permute(0, 2, 1)
-            )
-            ret["cfm_loss"] = cfm_loss
 
         return ret
 
@@ -562,6 +583,7 @@ class MatchaTTS_MAS(torch.nn.Module):
         lids: Optional[torch.Tensor] = None,
         n_timesteps: int = None,
         temperature: float = None,
+        noise_scale: float = 0.667,
         use_teacher_forcing: bool = False,
     ) -> Dict[str, torch.Tensor]:
         """Generate the sequence of features given the sequences of characters.
@@ -584,6 +606,9 @@ class MatchaTTS_MAS(torch.nn.Module):
         """
         x, y = text, feats
         spemb, d = spembs, durations
+
+        # add eos at the last of sequence
+        # x = F.pad(x, [0, 1], "constant", self.eos)
 
         # setup batch axis
         ilens = torch.tensor([x.shape[0]], dtype=torch.long, device=x.device)
@@ -629,7 +654,8 @@ class MatchaTTS_MAS(torch.nn.Module):
             )  # (1, T_feats, odim)
 
         ret = {
-            "feat_gen": _ret["feat_gen"][0].permute(1, 0),
+            # "feat_gen": _ret["feat_gen"][0].permute(1, 0),
+            "feat_gen": _ret["outs"][0],
             "duration": _ret["d_outs"][0],
         }
 
@@ -641,6 +667,9 @@ class MatchaTTS_MAS(torch.nn.Module):
             ret["ds"] = _ret["ds"][0]
         else:
             ret["ds"] = None
+
+        if "outs_bar" in _ret:
+            ret["outs_bar"] = _ret["outs_bar"][0]
 
         return ret
 
@@ -695,7 +724,3 @@ class MatchaTTS_MAS(torch.nn.Module):
         # initialize parameters
         if init_type != "pytorch":
             initialize(self, init_type)
-
-        # initialize alpha in scaled positional encoding
-        if self.encoder_type == "transformer" and self.use_scaled_pos_enc:
-            self.encoder.embed[-1].alpha.data = torch.tensor(init_enc_alpha)

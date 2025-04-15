@@ -4,7 +4,7 @@
 # Copyright 2025 Wen-Chin Huang
 #  MIT License (https://opensource.org/licenses/MIT)
 
-"""Train TTS model."""
+"""Train an E2-TTS model."""
 
 import argparse
 import logging
@@ -19,10 +19,10 @@ import jatts.trainers
 import numpy as np
 import torch
 import yaml
-from jatts.datasets.tts_dataset import TTSDataset
+from jatts.datasets.tts_dataset import TTSDataset, DynamicBatchSampler
 from jatts.schedulers.warmup_lr import WarmupLR
+from jatts.schedulers.e2tts_scheduler import E2TTSSequentialLR
 
-# from jatts.losses import Seq2SeqLoss, GuidedMultiHeadAttentionLoss
 from jatts.utils import read_hdf5
 from jatts.vocoder import Vocoder
 from torch.optim.lr_scheduler import ExponentialLR, StepLR
@@ -37,13 +37,14 @@ scheduler_classes = {
     "warmuplr": WarmupLR,
     "exponentiallr": ExponentialLR,
     "StepLR": StepLR,
+    "E2TTSSequentialLR": E2TTSSequentialLR,
 }
 
 
 def main():
     """Run training process."""
     parser = argparse.ArgumentParser(
-        description=("Train TTS model (See detail in bin/tts_train.py).")
+        description=("Train an E2-TTS model (See detail in bin/e2tts_train.py).")
     )
     parser.add_argument(
         "--train-csv",
@@ -190,6 +191,8 @@ def main():
         feat_list=config["feat_list"],
         token_list_path=args.token_list,
         token_column=args.token_column,
+        sampling_rate=config["sampling_rate"],
+        hop_size=config["hop_size"],
         is_inference=False,
         allow_cache=config.get("allow_cache", False),  # keep compatibility
     )
@@ -200,6 +203,8 @@ def main():
         feat_list=config["feat_list"],
         token_list_path=args.token_list,
         token_column=args.token_column,
+        sampling_rate=config["sampling_rate"],
+        hop_size=config["hop_size"],
         is_inference=False,
         allow_cache=config.get("allow_cache", False),  # keep compatibility
     )
@@ -215,38 +220,29 @@ def main():
         config.get("collater_type", "ARTTSCollater"),
     )
     collater = collater_class()
-    sampler = {"train": None, "dev": None}
-    if args.distributed:
-        # setup sampler for distributed training
-        from torch.utils.data.distributed import DistributedSampler
-
-        sampler["train"] = DistributedSampler(
-            dataset=dataset["train"],
-            num_replicas=args.world_size,
-            rank=args.rank,
-            shuffle=True,
-        )
-        sampler["dev"] = DistributedSampler(
-            dataset=dataset["dev"],
-            num_replicas=args.world_size,
-            rank=args.rank,
-            shuffle=False,
-        )
+    sampler = {
+        "train": DynamicBatchSampler(
+            dataset["train"],
+            config["batch_size_per_gpu"],
+            max_samples=config["max_samples"],
+            random_seed=config["sampler_random_seed"],  # This enables reproducible shuffling
+            drop_residual=False,
+        ),
+        "dev": None,
+    }
     data_loader = {
         "train": DataLoader(
             dataset=dataset["train"],
-            shuffle=False if args.distributed else True,
             collate_fn=collater,
-            batch_size=config["batch_size"],
             num_workers=config["num_workers"],
-            sampler=sampler["train"],
+            batch_sampler=sampler["train"],
             pin_memory=config["pin_memory"],
+            persistent_workers=True,
         ),
         "dev": DataLoader(
             dataset=dataset["dev"],
-            shuffle=False if args.distributed else True,
             collate_fn=collater,
-            batch_size=config["batch_size"],
+            batch_size=config["num_save_intermediate_results"],
             num_workers=config["num_workers"],
             sampler=sampler["dev"],
             pin_memory=config["pin_memory"],
@@ -260,7 +256,7 @@ def main():
     )
     model = model_class(
         **config["model_params"],
-    ).to(device)
+    )
 
     # load output stats for denormalization
     stats = {
@@ -304,16 +300,7 @@ def main():
             griffin_lim_iters=64,
         )
 
-    # define criterions
-    if config.get("criterions", None):
-        criterion = {
-            criterion_class: getattr(jatts.losses, criterion_class)(
-                **criterion_paramaters
-            )
-            for criterion_class, criterion_paramaters in config["criterions"].items()
-        }
-    else:
-        raise ValueError("Please specify criterions in the config file.")
+    # define criterions -> no need to specify for E2TTS? (only a simple MSE loss, calculated in model file)
 
     # define optimizers and schedulers
     optimizer_class = getattr(
@@ -345,7 +332,6 @@ def main():
     logging.info(model)
     logging.info(optimizer)
     logging.info(scheduler)
-    logging.info(criterion)
 
     # define trainer
     trainer_class = getattr(
@@ -359,7 +345,6 @@ def main():
         sampler=sampler,
         model=model,
         vocoder=vocoder,
-        criterion=criterion,
         optimizer=optimizer,
         scheduler=scheduler,
         config=config,

@@ -15,6 +15,7 @@ import librosa
 import os
 import pyopenjtalk
 from tqdm import tqdm
+import random
 
 from jatts.utils.utils import write_csv
 
@@ -66,6 +67,16 @@ if __name__ == "__main__":
                 "start": start / sr,
                 "end": end / sr,
             }
+
+            if _set == "eval":
+                # For E2-TTS: randomly choose a training sample as prompt
+                prompt_index = random.randint(0, len(train_data) - 1)
+                item["prompt_sample_id"] = train_data[prompt_index]["sample_id"]
+                item["prompt_wav_path"] = train_data[prompt_index]["wav_path"]
+                item["prompt_original_text"] = train_data[prompt_index]["original_text"]
+                item["prompt_phonemes"] = train_data[prompt_index]["phonemes"]
+                item["prompt_start"] = train_data[prompt_index]["start"]
+                item["prompt_end"] = train_data[prompt_index]["end"]
 
             if _set.startswith("train"):
                 train_data.append(item)
