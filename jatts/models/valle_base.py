@@ -340,7 +340,7 @@ class ValleBase(nn.Module):
         p_dropout: float = 0.1,
     ):
         super().__init__()
-        self.idim = idim # not really used
+        self.idim = idim  # not really used
         self.n_tokens = n_tokens
 
         causal = self.causal
@@ -402,8 +402,7 @@ class ValleBase(nn.Module):
         shift_targ_list: bool = False,
         return_all_resp: Literal[False] = False,
         sampling_temperature: float = 1.0,
-    ) -> Tensor:
-        ...
+    ) -> Tensor: ...
 
     @overload
     def forward(
@@ -416,8 +415,7 @@ class ValleBase(nn.Module):
         shift_targ_list: bool = False,
         return_all_resp: Literal[True] = True,
         sampling_temperature: float = 1.0,
-    ) -> list[Tensor]:
-        ...
+    ) -> list[Tensor]: ...
 
     def forward(
         self,
@@ -525,8 +523,8 @@ class ValleBase(nn.Module):
                     ignore_index=self.ignore_index,
                 )
             )
-            #loss = sum(loss.values())
-            #return loss
+            # loss = sum(loss.values())
+            # return loss
 
         # Sample from output distribution
         if return_all_resp:

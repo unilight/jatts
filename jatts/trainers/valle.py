@@ -28,7 +28,6 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
 
-
 def flatten_dict(d):
     records = pd.json_normalize(d).to_dict(orient="records")
     return records[0] if records else {}
@@ -58,8 +57,7 @@ def gather_attribute(module, attrname, delete=True, prefix=True):
 
 
 class ValleTrainer(Trainer):
-    """Customized trainer module for LM TTS
-    """
+    """Customized trainer module for LM TTS"""
 
     def _train_step(self, batch):
         """Train model one step."""
@@ -69,10 +67,10 @@ class ValleTrainer(Trainer):
 
         if self.config["model_type"] == "ValleAR":
             # get only the first quantization level as targets
-            ys = [y[0, :].to(self.device).long() for y in batch["ys"]] # t
+            ys = [y[0, :].to(self.device).long() for y in batch["ys"]]  # t
         elif self.config["model_type"] == "ValleNAR":
             # use all quantization levels as targets
-            ys = [y.transpose(1, 0).to(self.device).long() for y in batch["ys"]] # t, q
+            ys = [y.transpose(1, 0).to(self.device).long() for y in batch["ys"]]  # t, q
 
         # model forward
         nll_loss = self.model(xs, prompts, ys)
@@ -129,10 +127,8 @@ class ValleTrainer(Trainer):
             model.to(device)
             return model
 
-
         def unload_model():
             return _load_model.cache_clear()
-
 
         @torch.inference_mode()
         def decode(codes, device="cuda"):
@@ -144,31 +140,29 @@ class ValleTrainer(Trainer):
             model = _load_model(device)
             return model.decode([(codes, None)]), model.sample_rate
 
-
         def decode_to_file(resps, path: Path):
             assert resps.dim() == 2, f"Require shape (t q), but got {resps.shape}."
             resps = rearrange(resps, "t q -> 1 q t")
             wavs, sr = decode(resps)
             sf.write(str(path), wavs.cpu()[0, 0], sr)
-            
 
         # parse batch
         xs = [x.to(self.device).long() for x in batch["xs"]]
         ys = [y.to(self.device).long() for y in batch["ys"]]
         prompts = [p.to(self.device).long() for p in batch["pm"]]
 
-        for idx, (x, y, pm) in enumerate(
-            zip(xs, ys, prompts)
-        ):
+        for idx, (x, y, pm) in enumerate(zip(xs, ys, prompts)):
             start_time = time.time()
 
             # check directory
-            dirname = os.path.join(self.config["outdir"], f"predictions/{self.steps}steps")
+            dirname = os.path.join(
+                self.config["outdir"], f"predictions/{self.steps}steps"
+            )
             if not os.path.exists(os.path.join(dirname, "wav")):
                 os.makedirs(os.path.join(dirname, "wav"), exist_ok=True)
 
             # Check if model is wrapped in DDP
-            model = self.model.module if hasattr(self.model, 'module') else self.model
+            model = self.model.module if hasattr(self.model, "module") else self.model
             if model.causal:
                 # AR mode
                 codes = self.model(x, [pm], max_steps=self.config["max_ar_steps"])
@@ -192,7 +186,7 @@ class ValleTrainer(Trainer):
                         resps_list=y_,
                         sampling_temperature=0.2,
                     )[0]
-                    #codes = ret["outs"]
+                    # codes = ret["outs"]
                     codes = rearrange(codes, "t q -> 1 q t")
                     wav, sr = decode(codes)
                     sf.write(

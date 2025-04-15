@@ -14,7 +14,6 @@ class EnCodec:
         self.model.set_target_bandwidth(6.0)
         self.model.to(device)
 
-
     @torch.no_grad()
     def encode(self, wav, sr, device="cuda"):
         """
@@ -31,14 +30,14 @@ class EnCodec:
             wav = wav.unsqueeze(0)
         elif wav.dim() == 1:
             wav = wav.unsqueeze(0).unsqueeze(0)
-        
+
         if wav.size(0) != 1 or wav.size(1) != 1:
             wav = wav.view(1, 1, -1)
-        
+
         encoded_frames = self.model.encode(wav)
         qnt = torch.cat([encoded[0] for encoded in encoded_frames], dim=-1)  # (b q t)
         return qnt
-        
+
     def unload_model(self):
         return self.model.cache_clear()
 

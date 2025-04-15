@@ -278,7 +278,7 @@ def main():
                 feat = extractor.forward(item["wav_path"])
             elif feat_type == "encodec":
                 feat = extractor.encode(audio, config["sampling_rate"], device)
-                feat = feat.squeeze(0).cpu().numpy() # q, t
+                feat = feat.squeeze(0).cpu().numpy()  # q, t
             else:
                 logging.info(f"Not supported feature type {feat_type}. Skip.")
                 continue

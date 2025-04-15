@@ -195,7 +195,7 @@ def main():
         yaml.dump(config, f, Dumper=yaml.Dumper)
     for key, value in config.items():
         logging.info(f"{key} = {value}")
-    
+
     if not args.stats:
         stats = None
 

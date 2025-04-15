@@ -117,7 +117,7 @@ def example_usage():
 
     model = NAR(num_qnts).to(device)
     num_params = sum(p.numel() for p in model.parameters())
-    with open('model_params.txt', 'w') as f:
+    with open("model_params.txt", "w") as f:
         f.write(f"Number of parameters in the model: {num_params:,}")
 
     text_list = [

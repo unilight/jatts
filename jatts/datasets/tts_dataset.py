@@ -130,14 +130,14 @@ class TTSDataset(Dataset):
                     normalized_feat = np.squeeze(normalized_feat, 0)
 
                 item[feat_name] = normalized_feat
-        
+
         if "encodec" in self.feat_list:
             prompts = read_hdf5(str(self.prompt_path), "encodec")
             prompts = prompts.transpose(1, 0)
             max_prompt_length = 400
             if prompts.shape[0] > max_prompt_length:
                 start = np.random.randint(0, prompts.shape[0] - max_prompt_length)
-                prompts = prompts[start:start + max_prompt_length]
+                prompts = prompts[start : start + max_prompt_length]
 
             item["prompts"] = prompts
 

@@ -71,9 +71,7 @@ class ValleAR(ValleBase):
         sampling_temperature,
     ):
         device = text_list[0].device
-        resp_list = [
-            torch.zeros(0, device=device).long() for _ in text_list
-        ]
+        resp_list = [torch.zeros(0, device=device).long() for _ in text_list]
         stopped = torch.zeros(len(text_list), device=device).bool()
         for _ in trange(max_steps):
             r = super().forward(

@@ -152,20 +152,24 @@ def main():
     # get AR model and load parameters
     model_class = getattr(jatts.models, "ValleAR")
     ar_model = model_class(**ar_config["model_params"])
-    ar_model.load_state_dict(torch.load(args.ar_checkpoint, map_location="cpu")["model"])
+    ar_model.load_state_dict(
+        torch.load(args.ar_checkpoint, map_location="cpu")["model"]
+    )
     ar_model = ar_model.eval().to(device)
     logging.info(f"Loaded AR model parameters from {args.ar_checkpoint}.")
 
     # get NAR model and load parameters
     nar_model_class = getattr(jatts.models, "ValleNAR")
     nar_model = nar_model_class(**nar_config["model_params"])
-    nar_model.load_state_dict(torch.load(args.nar_checkpoint, map_location="cpu")["model"])
+    nar_model.load_state_dict(
+        torch.load(args.nar_checkpoint, map_location="cpu")["model"]
+    )
     nar_model = nar_model.eval().to(device)
     logging.info(f"Loaded NAR model parameters from {args.nar_checkpoint}.")
 
     # load EnCodec decoder
     extractor = EnCodec()
-    
+
     # start generation
     with torch.no_grad(), tqdm(dataset, desc="[decode]") as pbar:
         for _, item in enumerate(pbar, 1):
@@ -178,7 +182,9 @@ def main():
             start_time = time.time()
 
             # AR model inference
-            ar_codes = ar_model([x], [prompts], max_steps=config.get("max_ar_steps", 1000))
+            ar_codes = ar_model(
+                [x], [prompts], max_steps=config.get("max_ar_steps", 1000)
+            )
             ar_codes = [code.unsqueeze(-1) for code in ar_codes]
 
             # NAR model inference
@@ -190,11 +196,11 @@ def main():
                 % (int(outs.size(0)) / (time.time() - start_time))
             )
 
-            #plot_generated_and_ref_2d(
+            # plot_generated_and_ref_2d(
             #    outs.cpu().numpy(),
             #    config["outdir"] + f"/outs/{sample_id}.png",
             #    origin="lower",
-            #)
+            # )
 
             if not os.path.exists(os.path.join(config["outdir"], "wav")):
                 os.makedirs(os.path.join(config["outdir"], "wav"), exist_ok=True)
@@ -204,9 +210,8 @@ def main():
                 path=Path(os.path.join(config["outdir"], "wav", f"{sample_id}.wav")),
             )
 
-
             ## when decoding dev set, for debugging purpose, synthesize analysis-synthesis voice
-            #if "feat_path" in item:
+            # if "feat_path" in item:
             #    if not os.path.exists(os.path.join(config["outdir"], "wav_anasyn")):
             #        os.makedirs(
             #            os.path.join(config["outdir"], "wav_anasyn"), exist_ok=True
