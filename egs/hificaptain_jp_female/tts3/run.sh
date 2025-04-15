@@ -52,7 +52,8 @@ resume=""  # checkpoint path to resume training
 outdir=                     # In case not evaluation not executed together with decoding & synthesis stage
 voc=PWG                     # vocoder used (GL or PWG)
 griffin_lim_iters=64        # number of iterations of Griffin-Lim
-checkpoint=""               # checkpoint path to be used for decoding
+ar_checkpoint=""               # checkpoint path to be used for decoding
+nar_checkpoint=""               # checkpoint path to be used for decoding
                             # if not provided, the latest one will be used
                             # (e.g. <path>/<to>/checkpoint-400000steps.pkl)
 
@@ -207,20 +208,21 @@ if [ "${stage}" -le 5 ] && [ "${stop_stage}" -ge 5 ]; then
     log "Stage 5: Network decoding"
 
     # shellcheck disable=SC2012
-    [ -z "${checkpoint}" ] && checkpoint="$(ls -dt "${expdir}"/*.pkl | head -1 || true)"
-    outdir="${expdir}/results/$(basename "${checkpoint}" .pkl)"
+    [ -z "${ar_checkpoint}" ] && ar_checkpoint="$(ls -dt "${ar_expdir}"/*.pkl | head -1 || true)"
+    [ -z "${nar_checkpoint}" ] && nar_checkpoint="$(ls -dt "${nar_expdir}"/*.pkl | head -1 || true)"
+    outdir="${nar_expdir}/results/$(basename "${ar_checkpoint}" .pkl)_$(basename "${nar_checkpoint}" .pkl)"
     pids=()
     for name in dev_raw_feat "${test_set}"; do
         [ ! -e "${outdir}/${name}" ] && mkdir -p "${outdir}/${name}"
         [ "${n_gpus}" -gt 1 ] && n_gpus=1
         log "Decoding start. See the progress via ${outdir}/${name}/decode.log."
         ${cuda_cmd} --gpu "${n_gpus}" "${outdir}/${name}/decode.log" \
-            tts_decode.py \
+            ttslm_decode.py \
                 --csv "data/${name}.csv" \
-                --stats "${expdir}/stats.h5" \
-                --token-list "${expdir}/tokens.txt" \
+                --token-list "${nar_expdir}/tokens.txt" \
                 --token-column "${token_column}" \
-                --checkpoint "${checkpoint}" \
+                --ar-checkpoint "${ar_checkpoint}" \
+                --nar-checkpoint "${nar_checkpoint}" \
                 --outdir "${outdir}/${name}" \
                 --verbose "${verbose}"
         log "Successfully finished decoding of ${name} set."

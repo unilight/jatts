@@ -1,6 +1,10 @@
 from encodec import EncodecModel
 from encodec.utils import convert_audio
+from einops import rearrange
+from pathlib import Path
+
 import torch
+import soundfile as sf
 
 
 class EnCodec:
@@ -34,3 +38,22 @@ class EnCodec:
         encoded_frames = self.model.encode(wav)
         qnt = torch.cat([encoded[0] for encoded in encoded_frames], dim=-1)  # (b q t)
         return qnt
+        
+    def unload_model(self):
+        return self.model.cache_clear()
+
+    @torch.no_grad()
+    def decode(self, codes, device="cuda"):
+        """
+        Args:
+            codes: (b q t)
+        """
+        assert codes.dim() == 3
+        codes = codes.to(device)
+        return self.model.decode([(codes, None)]), self.model.sample_rate
+
+    def decode_to_file(self, resps, path: Path):
+        assert resps.dim() == 2, f"Require shape (t q), but got {resps.shape}."
+        resps = rearrange(resps, "t q -> 1 q t")
+        wavs, sr = self.decode(resps)
+        sf.write(str(path), wavs.cpu()[0, 0], sr)
