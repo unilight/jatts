@@ -18,7 +18,8 @@ verbose=1      # verbosity level (lower is less info)
 n_gpus=1       # number of gpus in training
 n_jobs=16      # number of parallel jobs in feature extraction
 
-conf=conf/valle_ar.yaml
+ar_conf=conf/valle_ar.yaml
+nar_conf=conf/valle_nar.yaml
 
 # dataset configuration
 # db_root=downloads
@@ -110,7 +111,7 @@ if [ "${stage}" -le 1 ] && [ "${stop_stage}" -ge 1 ]; then
         log "Feature extraction start. See the progress via ${dumpdir}/${name}/preprocessing.*.log."
         ${train_cmd} JOB=1:${n_jobs} "${dumpdir}/${name}/preprocessing.JOB.log" \
             preprocess.py \
-                --config "${conf}" \
+                --config "${ar_conf}" \
                 --csv "${dumpdir}/${name}/csvs/${name}.JOB.csv" \
                 --dumpdir "${dumpdir}/${name}/feats" \
                 --f0_path "conf/f0.yaml" \
@@ -144,38 +145,66 @@ if [ "${stage}" -le 2 ] && [ "${stop_stage}" -ge 2 ]; then
 fi
 
 if [ -z ${tag} ]; then
-    expname=${train_set}_${token_type}_${cleaner}_$(basename ${conf%.*})
+    expname=${train_set}_${token_type}_${cleaner}_$(basename ${ar_conf%.*})
 else
     expname=${train_set}_${token_type}_${cleaner}_${tag}
 fi
-expdir=exp/${expname}
+ar_expdir=exp/${expname}_armodel
 if [ "${stage}" -le 3 ] && [ "${stop_stage}" -ge 3 ]; then
     log "Stage 3: Network training"
 
-    [ ! -e "${expdir}" ] && mkdir -p "${expdir}"
-    cp "${token_list}" "${expdir}/tokens.txt"
+    [ ! -e "${ar_expdir}" ] && mkdir -p "${ar_expdir}"
+    cp "${token_list}" "${ar_expdir}/tokens.txt"
     if [ "${n_gpus}" -gt 1 ]; then
         log "Not Implemented yet."
         train="python -m seq2seq_vc.distributed.launch --nproc_per_node ${n_gpus} -c tts-train"
     else
         train="tts_train.py"
     fi
-    log "Training start. See the progress via ${expdir}/train.log."
-    ${cuda_cmd} --gpu "${n_gpus}" "${expdir}/train.log" \
+    log "Training start. See the progress via ${ar_expdir}/train.log."
+    ${cuda_cmd} --gpu "${n_gpus}" "${ar_expdir}/train.log" \
         ${train} \
-            --config "${conf}" \
+            --config "${ar_conf}" \
             --train-csv "data/${train_set}_raw_feat.csv" \
             --dev-csv "data/${dev_set}_raw_feat.csv" \
-            --token-list "${expdir}/tokens.txt" \
+            --token-list "${ar_expdir}/tokens.txt" \
             --token-column "${token_column}" \
-            --outdir "${expdir}" \
+            --outdir "${ar_expdir}" \
             --resume "${resume}" \
             --verbose "${verbose}"
     log "Successfully finished training."
 fi
 
+
+nar_expdir=exp/${expname}_narmodel
 if [ "${stage}" -le 4 ] && [ "${stop_stage}" -ge 4 ]; then
-    log "Stage 4: Network decoding"
+    log "Stage 4: Network training"
+
+    [ ! -e "${nar_expdir}" ] && mkdir -p "${nar_expdir}"
+    cp "${token_list}" "${nar_expdir}/tokens.txt"
+    if [ "${n_gpus}" -gt 1 ]; then
+        log "Not Implemented yet."
+        train="python -m seq2seq_vc.distributed.launch --nproc_per_node ${n_gpus} -c tts-train"
+    else
+        train="tts_train.py"
+    fi
+    log "Training start. See the progress via ${nar_expdir}/train.log."
+    ${cuda_cmd} --gpu "${n_gpus}" "${nar_expdir}/train.log" \
+        ${train} \
+            --config "${nar_conf}" \
+            --train-csv "data/${train_set}_raw_feat.csv" \
+            --dev-csv "data/${dev_set}_raw_feat.csv" \
+            --token-list "${nar_expdir}/tokens.txt" \
+            --token-column "${token_column}" \
+            --outdir "${nar_expdir}" \
+            --resume "${resume}" \
+            --verbose "${verbose}"
+    log "Successfully finished training."
+fi
+
+
+if [ "${stage}" -le 5 ] && [ "${stop_stage}" -ge 5 ]; then
+    log "Stage 5: Network decoding"
 
     # shellcheck disable=SC2012
     [ -z "${checkpoint}" ] && checkpoint="$(ls -dt "${expdir}"/*.pkl | head -1 || true)"
@@ -199,8 +228,8 @@ if [ "${stage}" -le 4 ] && [ "${stop_stage}" -ge 4 ]; then
     log "Successfully finished decoding."
 fi
 
-if [ ${stage} -le 5 ] && [ ${stop_stage} -ge 5 ]; then
-    log "stage 5: Objective Evaluation"
+if [ ${stage} -le 6 ] && [ ${stop_stage} -ge 6 ]; then
+    log "stage 6: Objective Evaluation"
 
     [ -z "${checkpoint}" ] && checkpoint="$(ls -dt "${expdir}"/*.pkl | head -1 || true)"
     outdir="${expdir}/results/$(basename "${checkpoint}" .pkl)"

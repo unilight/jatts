@@ -18,10 +18,9 @@ out_feat_type: encodec
 ###########################################################
 #              NETWORK ARCHITECTURE SETTING               #
 ###########################################################
-model_type: ValleAR
+model_type: ValleNAR
 model_params:
     n_tokens: 1024
-max_ar_steps: 1000 
 
 ###########################################################
 #                      LOSS SETTING                       #

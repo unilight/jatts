@@ -1,0 +1,37 @@
+#!/bin/bash
+#
+#   own : root:root
+#  mode : 660
+
+export PATH=/sbin:/bin
+export LANG=C
+export LOGNAME=root
+export USER=root
+export HOME=/root
+
+PROGRAM_NAME=prologue
+DESTDIR=/opt/FJSVcltk
+RCDIR=${DESTDIR}/libexec/rscunit/${PJM_RSCUNIT}/prologue.d
+[ -d ${RCDIR} ] || exit 0
+
+JOBID=$PJM_JOBID
+if [ x"$PJM_SUBJOBID" != "x" ]; then
+    JOBID=$PJM_SUBJOBID
+fi
+
+echo "JOBID=$JOBID: start" | logger -i -t $PROGRAM_NAME
+
+maxrc=0
+for rcfile in $(ls -1 ${RCDIR}); do
+    if [ ! -x ${RCDIR}/${rcfile} ]; then
+        continue
+    fi
+
+    ${RCDIR}/${rcfile}
+    rc=${?}
+    echo "JOBID=$JOBID: ${rcfile}: rc=$rc" | logger -i -t $PROGRAM_NAME
+    [ ${rc} -gt ${maxrc} ] && maxrc=${rc}
+done
+
+echo "JOBID=$JOBID: end" | logger -i -t $PROGRAM_NAME
+exit ${maxrc}

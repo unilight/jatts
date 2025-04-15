@@ -45,10 +45,6 @@ class ValleAR(ValleBase):
         max_steps=1000,
         sampling_temperature=1.0,
     ):
-        logging.info(f"text_list: {len(text_list)}")
-        logging.info(f"proms_list: {len(proms_list)}")
-        logging.info(f"proms_list[0]: {proms_list[0].shape}")
-        logging.info(f"resp_list: {resp_list[0].shape}")
         if resp_list is not None:
             return super().forward(
                 text_list,
