@@ -60,7 +60,7 @@ def main():
     parser.add_argument(
         "--stats",
         type=str,
-        required=True,
+        required=False,
         help="stats file for denormalization.",
     )
     parser.add_argument(
@@ -183,6 +183,9 @@ def main():
     for key, value in config.items():
         logging.info(f"{key} = {value}")
 
+    if not args.stats:
+        stats = None
+
     # get dataset
     train_dataset = TTSDataset(
         csv_path=args.train_csv,
@@ -191,6 +194,7 @@ def main():
         token_list_path=args.token_list,
         token_column=args.token_column,
         is_inference=False,
+        prompt_path=config.get("prompt_path", None),
         allow_cache=config.get("allow_cache", False),  # keep compatibility
     )
     logging.info(f"The number of training files = {len(train_dataset)}.")
@@ -201,6 +205,7 @@ def main():
         token_list_path=args.token_list,
         token_column=args.token_column,
         is_inference=False,
+        prompt_path=config.get("prompt_path", None),
         allow_cache=config.get("allow_cache", False),  # keep compatibility
     )
     logging.info(f"The number of development files = {len(dev_dataset)}.")
@@ -262,11 +267,13 @@ def main():
         **config["model_params"],
     ).to(device)
 
+    logging.info(f"stats: {args.stats}")
     # load output stats for denormalization
-    stats = {
-        "mean": read_hdf5(args.stats, f"{out_feat_type}_mean"),
-        "scale": read_hdf5(args.stats, f"{out_feat_type}_scale"),
-    }
+    if args.stats is not None:
+        stats = {
+            "mean": read_hdf5(args.stats, f"{out_feat_type}_mean"),
+            "scale": read_hdf5(args.stats, f"{out_feat_type}_scale"),
+        }
 
     # load vocoder
     if config.get("vocoder", False):
@@ -280,10 +287,11 @@ def main():
                 device,
             )
         elif vocoder_type == "encodec":
-            vocoder = EnCodec_decoder(
-                stats,  # this is used to denormalized the converted features,
-                device,
-            )
+            vocoder = None
+            # vocoder = EnCodec_decoder(
+            #     stats,  # this is used to denormalized the converted features,
+            #     device,
+            # )
         else:
             vocoder = Vocoder(
                 config["vocoder"]["checkpoint"],

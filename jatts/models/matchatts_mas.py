@@ -26,7 +26,7 @@ from jatts.modules.transformer.subsampling import Conv2dSubsampling
 from jatts.modules.alignments import (
     AlignmentModule,
     average_by_duration,
-    viterbi_decode
+    viterbi_decode,
 )
 
 from typeguard import typechecked
@@ -34,6 +34,7 @@ from typeguard import typechecked
 # from espnet2.tts.gst.style_encoder import StyleEncoder # in the future
 
 MAX_DP_OUTPUT = 10
+
 
 class MatchaTTS_MAS(torch.nn.Module):
     """Matcha-TTS module with monotonic alignment search (MAS).
@@ -452,9 +453,7 @@ class MatchaTTS_MAS(torch.nn.Module):
                 bin_loss = 0.0
             else:
                 log_p_attn = self.alignment_module(hs, ys, d_masks)
-                ds, bin_loss = self.viterbi_func(
-                    log_p_attn, ilens, olens
-                )
+                ds, bin_loss = self.viterbi_func(log_p_attn, ilens, olens)
 
             # forward duration predictor
             if self.duration_predictor_type == "deterministic":
@@ -474,9 +473,7 @@ class MatchaTTS_MAS(torch.nn.Module):
         else:
             # forward alignment module and obtain duration
             log_p_attn = self.alignment_module(hs, ys, d_masks)
-            ds, bin_loss = self.viterbi_func(
-                log_p_attn, ilens, olens
-            )
+            ds, bin_loss = self.viterbi_func(log_p_attn, ilens, olens)
 
             # forward duration predictor
             h_masks = make_non_pad_mask(ilens).to(hs.device)
@@ -536,7 +533,7 @@ class MatchaTTS_MAS(torch.nn.Module):
             "olens_in": olens_in,
             "bin_loss": bin_loss,
             "log_p_attn": log_p_attn,
-            "ds": ds
+            "ds": ds,
         }
 
         # decoder forward. Note that the input to the decoder should be [B, feat_dim, time]

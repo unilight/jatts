@@ -32,6 +32,7 @@ class TTSDataset(Dataset):
         is_inference,
         sampling_rate = None,
         hop_size = None,
+        prompt_path=None,
         return_utt_id=False,
         allow_cache=False,
     ):
@@ -53,6 +54,7 @@ class TTSDataset(Dataset):
         self.is_inference = is_inference
         self.sampling_rate = sampling_rate
         self.hop_size = hop_size
+        self.prompt_path = prompt_path
 
         # read dataset
         self.dataset, _ = read_csv(csv_path, dict_reader=True)
@@ -61,6 +63,8 @@ class TTSDataset(Dataset):
         if not self.is_inference:
             self.stats = {}
             for feat_name in feat_list:
+                if feat_name == "encodec":
+                    continue
                 scaler = StandardScaler()
                 scaler.mean_ = read_hdf5(stats_path, f"{feat_name}_mean")
                 scaler.scale_ = read_hdf5(stats_path, f"{feat_name}_scale")
@@ -122,7 +126,11 @@ class TTSDataset(Dataset):
                 # pitch, energy: [n_frames] -> [n_frames, 1]
                 elif feat_name in ["pitch", "energy"]:
                     raw_feat = raw_feat.reshape(-1, 1)
-                normalized_feat = self.stats[feat_name].transform(raw_feat)
+
+                if feat_name == "encodec":
+                    normalized_feat = raw_feat
+                else:
+                    normalized_feat = self.stats[feat_name].transform(raw_feat)
 
                 if feat_name == "spkemb":
                     normalized_feat = np.squeeze(normalized_feat, 0)
@@ -140,6 +148,15 @@ class TTSDataset(Dataset):
             item["prompt_indices"] = prompt_indices
             item["prompt_start"] = item["prompt_start"]
             item["prompt_end"] = item["prompt_end"]
+        if "encodec" in self.feat_list:
+            prompts = read_hdf5(str(self.prompt_path), "encodec")
+            prompts = prompts.transpose(1, 0)
+            max_prompt_length = 400
+            if prompts.shape[0] > max_prompt_length:
+                start = np.random.randint(0, prompts.shape[0] - max_prompt_length)
+                prompts = prompts[start : start + max_prompt_length]
+
+            item["prompts"] = prompts
 
         if self.allow_cache:
             self.caches[idx] = item

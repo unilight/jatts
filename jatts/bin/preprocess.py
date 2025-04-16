@@ -19,6 +19,7 @@ from jatts.modules.feature_extract.dio import Dio
 from jatts.modules.feature_extract.energy import Energy
 from jatts.modules.feature_extract.mel import logmelfilterbank
 from jatts.modules.feature_extract.spkemb_speechbrain import SpeechBrainSpkEmbExtractor
+from jatts.modules.feature_extract.encodec import EnCodec
 from jatts.utils import read_csv, write_csv, write_hdf5
 from tqdm import tqdm
 
@@ -102,7 +103,7 @@ def main():
         os.makedirs(args.dumpdir, exist_ok=True)
 
     # load upstream extractor
-    device = torch.device("cpu")
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     extractors = {}
     for feat_type in config.get("feat_list", ["mel"]):
         if feat_type == "mel":
@@ -148,12 +149,8 @@ def main():
                 )
                 exit(1)
 
-        # elif feat_type == "encodec":
-        #     from encodec.utils import convert_audio
-        #     from seq2seq_vc.utils.encodec import (encodec_encode,
-        #                                           get_encodec_model)
-
-        #     extractor = {"model": get_encodec_model()}
+        elif feat_type == "encodec":
+            extractor = EnCodec()
         # else:
         #     checkpoint = config["feat_list"][feat_type]["checkpoint"]
         #     upstream_model = get_upstream(feat_type).to(device)
@@ -279,22 +276,13 @@ def main():
                 )
             elif feat_type == "spkemb":
                 feat = extractor.forward(item["wav_path"])
+            elif feat_type == "encodec":
+                feat = extractor.encode(audio, config["sampling_rate"], device)
+                feat = feat.squeeze(0).cpu().numpy()  # q, t
             else:
                 logging.info(f"Not supported feature type {feat_type}. Skip.")
                 continue
 
-            # elif feat_type == "encodec":
-            #     encodec_model = extractors[feat_type]["model"]
-            #     audio_for_encodec = convert_audio(
-            #         torch.from_numpy(x).unsqueeze(0),
-            #         sampling_rate,
-            #         encodec_model.sample_rate,
-            #         encodec_model.channels,
-            #     )
-            #     feat = encodec_encode(
-            #         audio_for_encodec, encodec_model
-            #     )  # a list of [1, 128, T]
-            #     feat = torch.concat(feat, dim=2).squeeze(0).numpy().T  # [T, 128]
             # else:
             #     with torch.no_grad():
             #         xs = torch.from_numpy(x).unsqueeze(0).float().to(device)
