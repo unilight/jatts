@@ -20,12 +20,15 @@ from jatts.modules.feature_extract.energy import Energy
 from jatts.modules.feature_extract.mel import logmelfilterbank
 from jatts.modules.feature_extract.spkemb_speechbrain import SpeechBrainSpkEmbExtractor
 from jatts.modules.feature_extract.encodec import EnCodec
-from jatts.utils import read_csv, write_csv, write_hdf5
+from jatts.utils import read_csv, write_csv, write_hdf5, read_audio
 from tqdm import tqdm
 
 # from s3prl.nn import Featurizer
 # import s3prl_vc.models
 # from s3prl_vc.upstream.interface import get_upstream
+
+
+
 
 
 def main():
@@ -166,51 +169,30 @@ def main():
 
         extractors[feat_type] = extractor
 
+    if "prompt_feat_list" in config:
+        prompt_extractors = {}
+        for feat_type in config["prompt_feat_list"]:
+            if feat_type == "encodec":
+                extractor = EnCodec()
+            prompt_extractors[feat_type] = extractor
+    else:
+        prompt_extractors = None
+
     # process each data
     new_datas = []
     for item in tqdm(dataset):
         utt_id = item["sample_id"]
-        if "start" in item and "end" in item:
-            offset = float(item["start"])
-            duration = float(item["end"]) - float(item["start"])
-        else:
-            offset = 0.0
-            duration = None
 
-        audio, fs = librosa.load(
-            item["wav_path"],
+        # read main audio
+        audio = read_audio(
+            wav_path=item["wav_path"],
             sr=config["sampling_rate"],
-            offset=offset,
-            duration=duration,
+            start=item.get("start", None),
+            end=item.get("end", None),
+            global_gain_scale=config["global_gain_scale"],
         )
-
-        # check
-        assert len(audio.shape) == 1, f"{utt_id} seems to be multi-channel signal."
-        assert (
-            np.abs(audio).max() <= 1.0
-        ), f"{utt_id} seems to be different from 16 bit PCM."
-
-        # resample to specified sampling rate in config
-        if fs != config["sampling_rate"]:
-            audio = librosa.resample(
-                audio,
-                orig_sr=fs,
-                target_sr=config["sampling_rate"],
-            )
-
-        # make sure the audio length and feature length are matched
-        # audio = np.pad(audio, (0, config["fft_size"]), mode="reflect")
-        # audio = audio[: len(mel) * config["hop_size"]]
-        # assert len(mel) * config["hop_size"] == len(audio)
-
-        # apply global gain
-        if config["global_gain_scale"] > 0.0:
-            audio *= config["global_gain_scale"]
-        if np.abs(audio).max() > 1.0:
-            logging.warn(
-                f"{utt_id} causes clipping (max: {np.abs(audio).max()}). "
-                "it is better to re-consider global gain scale."
-            )
+        if audio is None:
+            logging.warn(f"{wav_path} returns None. Skip.")
             continue
 
         # save waveform
@@ -219,6 +201,25 @@ def main():
             "wave",
             audio.astype(np.float32),
         )
+
+        # read prompt audio if exists
+        if "prompt_wav_path" in item:
+            prompt_audio = read_audio(
+                wav_path=item["prompt_wav_path"],
+                sr=config["sampling_rate"],
+                start=item.get("prompt_start", None),
+                end=item.get("prompt_end", None),
+                global_gain_scale=config["global_gain_scale"],
+            )
+
+            # save waveform
+            write_hdf5(
+                os.path.join(args.dumpdir, f"{utt_id}.h5"),
+                "prompt_wave",
+                prompt_audio.astype(np.float32),
+            )
+        else:
+            prompt_audio = None
 
         # get phoneme-wise durations
         if "durations" in item:
@@ -297,6 +298,20 @@ def main():
                 feat_type,
                 feat.astype(np.float32),
             )
+        if prompt_extractors is not None:
+            assert prompt_audio is not None, "Prompt audio is not given."
+            for feat_type, extractor in prompt_extractors.items():
+                if feat_type == "encodec":
+                    feat = extractor.encode(prompt_audio, config["sampling_rate"], device)
+                    feat = feat.squeeze(0).cpu().numpy()  # q, t
+                else:
+                    logging.info(f"Not supported feature type {feat_type}. Skip.")
+                    continue
+                write_hdf5(
+                    feat_path,
+                    "prompt_" + feat_type,
+                    feat.astype(np.float32),
+                )
         new_datas.append({**item, "feat_path": os.path.realpath(feat_path)})
 
     # write to csv

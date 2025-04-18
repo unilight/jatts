@@ -9,15 +9,16 @@ import logging
 import os
 from multiprocessing import Manager
 from pathlib import Path
-from tqdm import tqdm
 
 import numpy as np
+import torch
 from jatts.utils import read_csv, read_hdf5
 from jatts.utils.token_id_converter import TokenIDConverter
+# from jatts.utils.prompt import prepare_prompt
 from sklearn.preprocessing import StandardScaler
 from torch.utils.data import Dataset, Sampler, SequentialSampler
+from tqdm import tqdm
 
-import torch
 
 class TTSDataset(Dataset):
     """PyTorch compatible dataset for TTS."""
@@ -30,9 +31,11 @@ class TTSDataset(Dataset):
         token_list_path,
         token_column,
         is_inference,
-        sampling_rate = None,
-        hop_size = None,
-        prompt_path=None,
+        prompt_feat_list=None,
+        # prompt_prefix_mode=1,
+        # prompt_length=225,
+        sampling_rate=None,
+        hop_size=None,
         return_utt_id=False,
         allow_cache=False,
     ):
@@ -42,6 +45,7 @@ class TTSDataset(Dataset):
             csv_path (str): path to the csv file
             stats_path (str): path to the stats file
             feat_list (list): list of feature names
+            prompt_feat_list (list): list of prompt feature names
             token_list (list): path to token list
             token_column (str): which column to use as the token in the csv file
             is_inference (bool): if True, do not load features.
@@ -54,7 +58,8 @@ class TTSDataset(Dataset):
         self.is_inference = is_inference
         self.sampling_rate = sampling_rate
         self.hop_size = hop_size
-        self.prompt_path = prompt_path
+        self.prompt_feat_list = prompt_feat_list
+        # self.prompt_prefix_mode = prompt_prefix_mode
 
         # read dataset
         self.dataset, _ = read_csv(csv_path, dict_reader=True)
@@ -137,7 +142,7 @@ class TTSDataset(Dataset):
 
                 item[feat_name] = normalized_feat
 
-        # load prompt for E2-TTS
+        # load prompt
         if "prompt_sample_id" in item:
             item["prompt_wav_path"] = item["prompt_wav_path"]
             prompt_phonemes = [p for p in item["prompt_phonemes"].split(" ") if p != ""]
@@ -148,15 +153,17 @@ class TTSDataset(Dataset):
             item["prompt_indices"] = prompt_indices
             item["prompt_start"] = item["prompt_start"]
             item["prompt_end"] = item["prompt_end"]
-        if "encodec" in self.feat_list:
-            prompts = read_hdf5(str(self.prompt_path), "encodec")
-            prompts = prompts.transpose(1, 0)
-            max_prompt_length = 400
-            if prompts.shape[0] > max_prompt_length:
-                start = np.random.randint(0, prompts.shape[0] - max_prompt_length)
-                prompts = prompts[start : start + max_prompt_length]
 
-            item["prompts"] = prompts
+            # VALL-E: load encodec features (in training)
+            if not self.is_inference:
+                for feat_name in self.prompt_feat_list:
+                    raw_feat = read_hdf5(item["feat_path"], "prompt_" + feat_name)
+
+                    if feat_name == "encodec":
+                        # [n_RVQ, n_frames] -> [n_frames, n_RVQ]
+                        raw_feat = raw_feat.transpose(1, 0)
+
+                    item["prompt_" + feat_name] = raw_feat
 
         if self.allow_cache:
             self.caches[idx] = item
@@ -180,12 +187,18 @@ class TTSDataset(Dataset):
             int: The number of frames.
         """
         item = self.dataset[index]
-        return (float(item["end"]) - float(item["start"])) * self.sampling_rate / self.hop_size
+        return (
+            (float(item["end"]) - float(item["start"]))
+            * self.sampling_rate
+            / self.hop_size
+        )
 
 
-# Dynamic Batch Sampler
 class DynamicBatchSampler(Sampler[list[int]]):
-    """Extension of Sampler that will do the following:
+    """
+    This module is for E2-TTS training.
+    
+    Extension of Sampler that will do the following:
     1.  Change the batch size (essentially number of sequences)
         in a batch to ensure that the total number of frames are less
         than a certain threshold.

@@ -11,13 +11,13 @@ Here we merge train_non_parallel and train_parallel
 
 import argparse
 import csv
-import librosa
 import os
-import pyopenjtalk
-from tqdm import tqdm
 import random
 
+import librosa
+import pyopenjtalk
 from jatts.utils.utils import write_csv
+from tqdm import tqdm
 
 TRIM_THRESHOLD_IN_DB = 40
 TRIM_FRAME_SIZE = 4096
@@ -28,10 +28,14 @@ SETS = ["train_parallel", "train_non_parallel", "dev", "eval"]
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--db_root", type=str, required=True, help="database root")
-    parser.add_argument("--train_set", type=str, default="train", help="name of train set")
+    parser.add_argument(
+        "--train_set", type=str, default="train", help="name of train set"
+    )
     parser.add_argument("--dev_set", type=str, default="dev", help="name of dev set")
     parser.add_argument("--test_set", type=str, default="test", help="name of test set")
-    parser.add_argument("--outdir", type=str, required=True, help="output directory path")
+    parser.add_argument(
+        "--outdir", type=str, required=True, help="output directory path"
+    )
     args = parser.parse_args()
 
     # read all text

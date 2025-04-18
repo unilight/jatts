@@ -9,7 +9,7 @@ import torch
 import torch.nn.functional as F
 
 
-class ValleCollater(object):
+class VALLECollater(object):
     """Customized collater for Pytorch DataLoader in language-model based TTS training."""
 
     def __init__(self):
@@ -26,7 +26,7 @@ class ValleCollater(object):
         for b in batch:
             xs.append(torch.from_numpy(b["token_indices"]))
             ys.append(torch.from_numpy(b["encodec"]))
-            pm.append(torch.from_numpy(b["prompts"]))
+            pm.append(torch.from_numpy(b["prompt_encodec"]))
 
         items = {
             "xs": xs,

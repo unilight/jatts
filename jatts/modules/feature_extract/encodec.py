@@ -1,3 +1,11 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
+# Copyright 2025 Wen-Chin Huang (Nagoya University)
+#  MIT License (https://opensource.org/licenses/MIT)
+
+"""Encodec model."""
+
 from encodec import EncodecModel
 from encodec.utils import convert_audio
 from einops import rearrange

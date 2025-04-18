@@ -345,6 +345,8 @@ class VITS(torch.nn.Module):
         text_lengths: torch.Tensor,
         feats: torch.Tensor,
         feats_lengths: torch.Tensor,
+        durations: torch.Tensor = None, # dummy
+        durations_lengths: torch.Tensor = None, # dummy
         spembs: Optional[torch.Tensor] = None,
         sids: Optional[torch.Tensor] = None,
         lids: Optional[torch.Tensor] = None,
@@ -435,9 +437,10 @@ class VITS(torch.nn.Module):
         #     style_embs = self.gst(ys)
         #     hs = hs + style_embs.unsqueeze(1)
 
-        # integrate speaker embedding
+        # integrate speaker embedding. shape: [B, spk_embed_dim]
+        # thus we need to transpose hs to [B, T, dim], then transpose back
         if self.spk_embed_dim is not None:
-            hs = self._integrate_with_spk_embed(hs, spembs)
+            hs = self._integrate_with_spk_embed(hs.transpose(1, 2), spembs).transpose(1, 2)
 
         # alignment search, VAE, flow
         d_masks = make_pad_mask(ilens).to(xs.device)
@@ -471,21 +474,23 @@ class VITS(torch.nn.Module):
                 logs_p.transpose(1, 2), d_outs, None, d_masks
             ).transpose(1, 2)
 
-            # decoder
+            # sampling
             z_p = (
                 m_p + torch.randn_like(m_p) * torch.exp(logs_p) * noise_scale
             )  # [B, dim, T]
             y_lengths = torch.clamp_min(torch.sum(d_outs), 1).long().unsqueeze(0)
             y_mask = make_non_pad_mask(y_lengths).unsqueeze(1).to(z_p.device)
-            z = self.flow(z_p, y_mask, g=spembs, inverse=True)
+
+            # forward flow. g should be (B, dim, 1).
+            z = self.flow(z_p, y_mask, g=spembs.unsqueeze(2), inverse=True)
         else:
-            # forward posterior encoder
+            # forward posterior encoder. g should be (B, dim, 1).
             z, m_q, logs_q, y_mask = self.posterior_encoder(
-                ys.transpose(1, 2), olens, g=spembs
+                ys.transpose(1, 2), olens, g=spembs.unsqueeze(2)
             )  # NOTE(unilight) 20250408: right now the only condition is spembs
 
-            # forward flow
-            z_p = self.flow(z, y_mask, g=spembs)  # (B, H, T_feats)
+            # forward flow. g should be (B, dim, 1).
+            z_p = self.flow(z, y_mask, g=spembs.unsqueeze(2))  # (B, H, T_feats)
 
             # forward alignment module and obtain duration
             log_p_attn = self.alignment_module(hs.transpose(1, 2), ys, d_masks)
@@ -543,7 +548,7 @@ class VITS(torch.nn.Module):
         # decoder reconstruction (during inference)
         if is_inference and ys is not None:
             z_bar, _, _, _ = self.posterior_encoder(
-                ys.transpose(1, 2), olens, g=spembs
+                ys.transpose(1, 2), olens, g=spembs.unsqueeze(2)
             )  # NOTE(unilight) 20250408: right now the only condition is spembs
             zs_bar, _ = self.decoder(
                 z_bar.transpose(1, 2), h_masks

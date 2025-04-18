@@ -18,12 +18,12 @@ verbose=1      # verbosity level (lower is less info)
 n_gpus=1       # number of gpus in training
 n_jobs=16      # number of parallel jobs in feature extraction
 
-ar_conf=conf/valle_ar.yaml
-nar_conf=conf/valle_nar.yaml
+ar_conf=conf/valle_ar.v1.yaml
+nar_conf=conf/valle_nar.v1.yaml
 
 # dataset configuration
 # db_root=downloads
-db_root=/data/group1/z44568r/datasets/hi-fi-captain/ja-JP/female
+db_root=/data/group1/z44476r/Corpora/hi-fi-captain/ja-JP/female
 dumpdir=dump                # directory to dump full features
 
 # data preparation related
@@ -150,9 +150,9 @@ if [ -z ${tag} ]; then
 else
     expname=${train_set}_${token_type}_${cleaner}_${tag}
 fi
-ar_expdir=exp/${expname}_armodel
+ar_expdir=exp/${expname}
 if [ "${stage}" -le 3 ] && [ "${stop_stage}" -ge 3 ]; then
-    log "Stage 3: Network training"
+    log "Stage 3: VALL-E: AR Network training"
 
     [ ! -e "${ar_expdir}" ] && mkdir -p "${ar_expdir}"
     cp "${token_list}" "${ar_expdir}/tokens.txt"
@@ -176,10 +176,14 @@ if [ "${stage}" -le 3 ] && [ "${stop_stage}" -ge 3 ]; then
     log "Successfully finished training."
 fi
 
-
-nar_expdir=exp/${expname}_narmodel
+if [ -z ${tag} ]; then
+    expname=${train_set}_${token_type}_${cleaner}_$(basename ${nar_conf%.*})
+else
+    expname=${train_set}_${token_type}_${cleaner}_${tag}
+fi
+nar_expdir=exp/${expname}
 if [ "${stage}" -le 4 ] && [ "${stop_stage}" -ge 4 ]; then
-    log "Stage 4: Network training"
+    log "Stage 4: VALL-E: NAR Network training"
 
     [ ! -e "${nar_expdir}" ] && mkdir -p "${nar_expdir}"
     cp "${token_list}" "${nar_expdir}/tokens.txt"
@@ -233,8 +237,9 @@ fi
 if [ ${stage} -le 6 ] && [ ${stop_stage} -ge 6 ]; then
     log "stage 6: Objective Evaluation"
 
-    [ -z "${checkpoint}" ] && checkpoint="$(ls -dt "${expdir}"/*.pkl | head -1 || true)"
-    outdir="${expdir}/results/$(basename "${checkpoint}" .pkl)"
+    [ -z "${ar_checkpoint}" ] && ar_checkpoint="$(ls -dt "${ar_expdir}"/*.pkl | head -1 || true)"
+    [ -z "${nar_checkpoint}" ] && nar_checkpoint="$(ls -dt "${nar_expdir}"/*.pkl | head -1 || true)"
+    outdir="${nar_expdir}/results/$(basename "${ar_checkpoint}" .pkl)_$(basename "${nar_checkpoint}" .pkl)"
     for name in "${test_set}"; do
         wavdir="${outdir}/${name}/wav"
         log "Evaluation start. See the progress via ${outdir}/${name}/evaluation.log."

@@ -18,7 +18,7 @@ import torch
 import yaml
 from jatts.datasets.tts_dataset import TTSDataset
 from jatts.modules.feature_extract.encodec import EnCodec
-from jatts.utils import read_hdf5
+from jatts.utils import read_hdf5, read_audio
 from jatts.utils.plot import plot_1d, plot_attention, plot_generated_and_ref_2d
 from jatts.vocoder import Vocoder
 from tqdm import tqdm
@@ -135,10 +135,11 @@ def main():
         csv_path=args.csv,
         stats_path=None,
         feat_list=config["feat_list"],
+        prompt_feat_list=config.get("prompt_feat_list", None),
         token_list_path=args.token_list,
         token_column=args.token_column,
         is_inference=True,
-        prompt_path=config.get("prompt_path", None),
+        # prompt_path=config.get("prompt_path", None),
         allow_cache=config.get("allow_cache", False),  # keep compatibility
     )
     logging.info(f"Dataset size = {len(dataset)}.")
@@ -150,25 +151,25 @@ def main():
         device = torch.device("cpu")
 
     # get AR model and load parameters
-    model_class = getattr(jatts.models, "ValleAR")
+    model_class = getattr(jatts.models, "VALLEAR")
     ar_model = model_class(**ar_config["model_params"])
     ar_model.load_state_dict(
-        torch.load(args.ar_checkpoint, map_location="cpu")["model"]
+        torch.load(args.ar_checkpoint, map_location="cpu", weights_only=True)["model"]
     )
     ar_model = ar_model.eval().to(device)
     logging.info(f"Loaded AR model parameters from {args.ar_checkpoint}.")
 
     # get NAR model and load parameters
-    nar_model_class = getattr(jatts.models, "ValleNAR")
+    nar_model_class = getattr(jatts.models, "VALLENAR")
     nar_model = nar_model_class(**nar_config["model_params"])
     nar_model.load_state_dict(
-        torch.load(args.nar_checkpoint, map_location="cpu")["model"]
+        torch.load(args.nar_checkpoint, map_location="cpu", weights_only=True)["model"]
     )
     nar_model = nar_model.eval().to(device)
     logging.info(f"Loaded NAR model parameters from {args.nar_checkpoint}.")
 
     # load EnCodec decoder
-    extractor = EnCodec()
+    encodec_model = EnCodec()
 
     # start generation
     with torch.no_grad(), tqdm(dataset, desc="[decode]") as pbar:
@@ -177,9 +178,20 @@ def main():
 
             # prepare input
             x = torch.tensor(item["token_indices"], dtype=torch.long).to(device)
-            prompts = torch.tensor(item["prompts"], dtype=torch.long).to(device)
+            # prompts = torch.tensor(item["prompt_encodec"], dtype=torch.long).to(device)
             # model forward
             start_time = time.time()
+
+            # extract encodec
+            prompt_audio = read_audio(
+                item["prompt_wav_path"],
+                config["sampling_rate"],
+                start=item.get("prompt_start", None),
+                end=item.get("prompt_end", None),
+            )
+            prompts = encodec_model.encode(prompt_audio, config["sampling_rate"], device)
+            prompts = prompts.squeeze(0).cpu().numpy()  # q, t
+            prompts = torch.tensor(prompts, dtype=torch.long).to(device).transpose(0, 1) # q, t -> t, q
 
             # AR model inference
             ar_codes = ar_model(
@@ -188,7 +200,7 @@ def main():
             ar_codes = [code.unsqueeze(-1) for code in ar_codes]
 
             # NAR model inference
-            nar_codes = nar_model([x], [prompts], resps_list=ar_codes)
+            nar_codes = nar_model([x], [prompts], resps_list=ar_codes) # q, t
             outs = nar_codes[0]
 
             logging.info(
@@ -196,38 +208,29 @@ def main():
                 % (int(outs.size(0)) / (time.time() - start_time))
             )
 
-            # plot_generated_and_ref_2d(
-            #    outs.cpu().numpy(),
-            #    config["outdir"] + f"/outs/{sample_id}.png",
-            #    origin="lower",
-            # )
+            if not os.path.exists(os.path.join(config["outdir"], "wav_ar")):
+                os.makedirs(os.path.join(config["outdir"], "wav_ar"), exist_ok=True)
+
+            encodec_model.decode_to_file(
+                resps=ar_codes[0],
+                path=Path(os.path.join(config["outdir"], "wav_ar", f"{sample_id}.wav")),
+            )
 
             if not os.path.exists(os.path.join(config["outdir"], "wav")):
                 os.makedirs(os.path.join(config["outdir"], "wav"), exist_ok=True)
 
-            extractor.decode_to_file(
+            encodec_model.decode_to_file(
                 resps=outs,
                 path=Path(os.path.join(config["outdir"], "wav", f"{sample_id}.wav")),
             )
 
-            ## when decoding dev set, for debugging purpose, synthesize analysis-synthesis voice
-            # if "feat_path" in item:
-            #    if not os.path.exists(os.path.join(config["outdir"], "wav_anasyn")):
-            #        os.makedirs(
-            #            os.path.join(config["outdir"], "wav_anasyn"), exist_ok=True
-            #        )
+            if not os.path.exists(os.path.join(config["outdir"], "wav_prompt")):
+                os.makedirs(os.path.join(config["outdir"], "wav_prompt"), exist_ok=True)
 
-            #    mel = torch.Tensor(read_hdf5(item["feat_path"], "mel"))
-            #    mel = (mel - stats["mean"]) / stats["scale"]
-            #    mel = mel.to(outs.device)
-
-            #    y, sr = vocoder.decode(mel)
-            #    sf.write(
-            #        os.path.join(config["outdir"], "wav_anasyn", f"{sample_id}.wav"),
-            #        y.cpu().numpy(),
-            #        sr,
-            #        "PCM_16",
-            #    )
+            encodec_model.decode_to_file(
+                resps=prompts,
+                path=Path(os.path.join(config["outdir"], "wav_prompt", f"{sample_id}.wav")),
+            )
 
 
 if __name__ == "__main__":

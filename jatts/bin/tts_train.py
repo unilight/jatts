@@ -22,6 +22,8 @@ import yaml
 from jatts.datasets.tts_dataset import TTSDataset
 from jatts.schedulers.warmup_lr import WarmupLR
 
+from encodec import EncodecModel
+
 # from jatts.losses import Seq2SeqLoss, GuidedMultiHeadAttentionLoss
 from jatts.utils import read_hdf5
 from jatts.vocoder import Vocoder
@@ -191,10 +193,12 @@ def main():
         csv_path=args.train_csv,
         stats_path=args.stats,
         feat_list=config["feat_list"],
+        prompt_feat_list=config.get("prompt_feat_list", None),
         token_list_path=args.token_list,
         token_column=args.token_column,
         is_inference=False,
-        prompt_path=config.get("prompt_path", None),
+        # prompt_prefix_mode=config.get("prompt_prefix_mode", 0), # for VALL-E
+        # max_prompt_frame_length=config.get("max_prompt_frame_length", 225), # for VALL-E
         allow_cache=config.get("allow_cache", False),  # keep compatibility
     )
     logging.info(f"The number of training files = {len(train_dataset)}.")
@@ -202,10 +206,12 @@ def main():
         csv_path=args.dev_csv,
         stats_path=args.stats,
         feat_list=config["feat_list"],
+        prompt_feat_list=config.get("prompt_feat_list", None),
         token_list_path=args.token_list,
         token_column=args.token_column,
         is_inference=False,
-        prompt_path=config.get("prompt_path", None),
+        # prompt_prefix_mode=config.get("prompt_prefix_mode", 0), # for VALL-E
+        # max_prompt_frame_length=config.get("max_prompt_frame_length", 225), # for VALL-E
         allow_cache=config.get("allow_cache", False),  # keep compatibility
     )
     logging.info(f"The number of development files = {len(dev_dataset)}.")
@@ -287,11 +293,9 @@ def main():
                 device,
             )
         elif vocoder_type == "encodec":
-            vocoder = None
-            # vocoder = EnCodec_decoder(
-            #     stats,  # this is used to denormalized the converted features,
-            #     device,
-            # )
+            vocoder = EncodecModel.encodec_model_24khz()
+            vocoder.set_target_bandwidth(6.0)
+            vocoder.to(device)
         else:
             vocoder = Vocoder(
                 config["vocoder"]["checkpoint"],

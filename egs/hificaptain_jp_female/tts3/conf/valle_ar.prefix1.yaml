@@ -13,22 +13,23 @@ fmax: null               # Maximum frequency in mel basis calculation.
 global_gain_scale: 1.0   # Will be multiplied to all of waveform.
 
 feat_list: ["encodec"]
+prompt_feat_list: ["encodec"]
 out_feat_type: encodec
-prompt_path: /data/group1/z44568r/toolkits2/jatts/egs/hificaptain_jp_female/tts3/dump/eval/feats/Seikatsu01_C-U__000100.h5
 
 ###########################################################
 #              NETWORK ARCHITECTURE SETTING               #
 ###########################################################
-model_type: ValleAR
+model_type: VALLEAR
 model_params:
-    n_tokens: 1024
-max_ar_steps: 1000 
+    n_tokens: 1024 
+    prompt_prefix_mode: 1           # 0: no prefix, 1: use random segment of provided prompt, 2: use segment of same utterance
+    prompt_max_frame_length: 225    # Maximum length of prompt in frames.
 
 ###########################################################
 #                      LOSS SETTING                       #
 ###########################################################
-trainer_type: ValleTrainer
-collater_type: ValleCollater
+trainer_type: VALLETrainer
+collater_type: VALLECollater
 criterions:
     "CFMLoss": {}
 
@@ -37,14 +38,17 @@ criterions:
 ###########################################################
 vocoder:
     vocoder_type: encodec
+max_ar_steps: 1000
 
 ###########################################################
 #                  DATA LOADER SETTING                    #
 ###########################################################
-batch_size: 16              # Batch size.
-pin_memory: true            # Whether to pin memory in Pytorch DataLoader.
-num_workers: 2              # Number of workers in Pytorch DataLoader.
-allow_cache: true           # Whether to allow cache in dataset. If true, it requires cpu memory.
+batch_size: 16                  # Batch size.
+pin_memory: true                # Whether to pin memory in Pytorch DataLoader.
+num_workers: 2                  # Number of workers in Pytorch DataLoader.
+allow_cache: true               # Whether to allow cache in dataset. If true, it requires cpu memory.
+gradient_accumulate_steps: 2    # Number of forward steps before a backward step. Used when OOM happens.
+                                # 1 GPU, 16 * 2 = 32
 
 ###########################################################
 #             OPTIMIZER & SCHEDULER SETTING               #

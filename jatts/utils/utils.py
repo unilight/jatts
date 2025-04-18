@@ -19,6 +19,7 @@ import numpy as np
 import torch
 import yaml
 from filelock import FileLock
+import librosa
 
 
 def get_basename(path):
@@ -196,3 +197,38 @@ def load_model(checkpoint, config, stats=None):
     )
 
     return model
+
+def read_audio(wav_path, sr, start=None, end=None, global_gain_scale=1.0):
+    """Read audio file."""
+
+    if start is not None and end is not None:
+        offset = float(start)
+        duration = float(end) - float(start)
+    else:
+        offset = 0.0
+        duration = None
+
+    # read, and resample if needed
+    audio, fs = librosa.load(
+        wav_path,
+        sr=sr,
+        offset=offset,
+        duration=duration,
+    )
+
+    # check
+    assert len(audio.shape) == 1, f"{wav_path} seems to be multi-channel signal."
+    assert (
+        np.abs(audio).max() <= 1.0
+    ), f"{wav_path} seems to be different from 16 bit PCM."
+
+    # apply global gain
+    audio *= global_gain_scale
+    if np.abs(audio).max() > 1.0:
+        logging.warn(
+            f"{wav_path} causes clipping (max: {np.abs(audio).max()}). "
+            "it is better to re-consider global gain scale."
+        )
+        return None
+
+    return audio
