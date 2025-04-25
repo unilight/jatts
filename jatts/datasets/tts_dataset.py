@@ -32,8 +32,7 @@ class TTSDataset(Dataset):
         token_column,
         is_inference,
         prompt_feat_list=None,
-        # prompt_prefix_mode=1,
-        # prompt_length=225,
+        prompt_strategy="same",
         sampling_rate=None,
         hop_size=None,
         return_utt_id=False,
@@ -45,10 +44,13 @@ class TTSDataset(Dataset):
             csv_path (str): path to the csv file
             stats_path (str): path to the stats file
             feat_list (list): list of feature names
-            prompt_feat_list (list): list of prompt feature names
-            token_list (list): path to token list
+            token_list_path (str): path to token list
             token_column (str): which column to use as the token in the csv file
             is_inference (bool): if True, do not load features.
+            prompt_feat_list (list): list of prompt feature names
+            prompt_strategy (str): strategy for prompt features: "same", or "given"
+            sampling_rate (int): sampling rate of the audio
+            hop_size (int): hop size of the audio
             return_utt_id (bool): Whether to return the utterance id with arrays.
             allow_cache (bool): Whether to allow cache of the loaded files.
         """
@@ -59,7 +61,7 @@ class TTSDataset(Dataset):
         self.sampling_rate = sampling_rate
         self.hop_size = hop_size
         self.prompt_feat_list = prompt_feat_list
-        # self.prompt_prefix_mode = prompt_prefix_mode
+        self.prompt_strategy = prompt_strategy
 
         # read dataset
         self.dataset, _ = read_csv(csv_path, dict_reader=True)
@@ -68,7 +70,7 @@ class TTSDataset(Dataset):
         if not self.is_inference:
             self.stats = {}
             for feat_name in feat_list:
-                if feat_name == "encodec":
+                if feat_name in ["encodec", "encodec_24khz", "encodec_48khz"]:
                     continue
                 scaler = StandardScaler()
                 scaler.mean_ = read_hdf5(stats_path, f"{feat_name}_mean")
@@ -132,7 +134,7 @@ class TTSDataset(Dataset):
                 elif feat_name in ["pitch", "energy"]:
                     raw_feat = raw_feat.reshape(-1, 1)
 
-                if feat_name == "encodec":
+                if feat_name in ["encodec", "encodec_24khz", "encodec_48khz"]:
                     normalized_feat = raw_feat
                 else:
                     normalized_feat = self.stats[feat_name].transform(raw_feat)
@@ -143,27 +145,43 @@ class TTSDataset(Dataset):
                 item[feat_name] = normalized_feat
 
         # load prompt
-        if "prompt_sample_id" in item:
+        if self.prompt_strategy == "given":
+            assert "prompt_wav_path" in item, "prompt_wav_path must be given if prompt_strategy is 'given'."
+
             item["prompt_wav_path"] = item["prompt_wav_path"]
-            prompt_phonemes = [p for p in item["prompt_phonemes"].split(" ") if p != ""]
-            prompt_indices = np.array(
-                self.token_id_converter.tokens2ids(prompt_phonemes), dtype=np.int64
-            )
-            item["prompt_phonemes"] = prompt_phonemes
-            item["prompt_indices"] = prompt_indices
             item["prompt_start"] = item["prompt_start"]
             item["prompt_end"] = item["prompt_end"]
+            if "prompt_phonemes" in item:
+                prompt_phonemes = [p for p in item["prompt_phonemes"].split(" ") if p != ""]
+                prompt_indices = np.array(
+                    self.token_id_converter.tokens2ids(prompt_phonemes), dtype=np.int64
+                )
+                item["prompt_phonemes"] = prompt_phonemes
+                item["prompt_indices"] = prompt_indices
 
-            # VALL-E: load encodec features (in training)
+            # load audio codec features (in training)
             if not self.is_inference:
                 for feat_name in self.prompt_feat_list:
                     raw_feat = read_hdf5(item["feat_path"], "prompt_" + feat_name)
 
-                    if feat_name == "encodec":
+                    if feat_name in ["encodec", "encodec_24khz", "encodec_48khz"]:
                         # [n_RVQ, n_frames] -> [n_frames, n_RVQ]
                         raw_feat = raw_feat.transpose(1, 0)
 
                     item["prompt_" + feat_name] = raw_feat
+
+        elif self.prompt_strategy == "same":
+            assert not self.is_inference, "prompt_strategy 'same' is only available in training."
+
+            # load audio codec features from same utterance
+            for feat_name in self.prompt_feat_list:
+                raw_feat = read_hdf5(item["feat_path"], feat_name)
+
+                if feat_name in ["encodec", "encodec_24khz", "encodec_48khz"]:
+                    # [n_RVQ, n_frames] -> [n_frames, n_RVQ]
+                    raw_feat = raw_feat.transpose(1, 0)
+
+                item["prompt_" + feat_name] = raw_feat
 
         if self.allow_cache:
             self.caches[idx] = item

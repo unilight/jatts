@@ -54,7 +54,7 @@ class VALLEAR(VALLEBase):
     ):
         # training
         if resp_list is not None:
-            return super().forward(
+            ret, loss =  super().forward(
                 text_list,
                 proms_list,
                 self._unsqueeze_list(resp_list),
@@ -63,6 +63,8 @@ class VALLEAR(VALLEBase):
                 shift_targ_list=True,
                 return_all_resp=False,
             )
+            return ret, loss
+
         # inference
         else:
             return self._generate(
@@ -84,14 +86,14 @@ class VALLEAR(VALLEBase):
         resp_list = [torch.zeros(0, device=device).long() for _ in text_list]
         stopped = torch.zeros(len(text_list), device=device).bool()
         for _ in range(max_steps):
-            r = super().forward(
+            ret, _ = super().forward(
                 text_list,
                 proms_list,
                 self._unsqueeze_list(resp_list),
                 sampling_temperature=sampling_temperature,
             )
-            stopped |= r == self.stop_token
-            for i, ri in enumerate(r):
+            stopped |= ret == self.stop_token
+            for i, ri in enumerate(ret):
                 resp_list[i] = torch.cat([resp_list[i], ri[None]])
             if stopped.all().item():
                 break

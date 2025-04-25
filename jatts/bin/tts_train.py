@@ -22,11 +22,10 @@ import yaml
 from jatts.datasets.tts_dataset import TTSDataset
 from jatts.schedulers.warmup_lr import WarmupLR
 
-from encodec import EncodecModel
-
 # from jatts.losses import Seq2SeqLoss, GuidedMultiHeadAttentionLoss
 from jatts.utils import read_hdf5
 from jatts.vocoder import Vocoder
+from jatts.modules.feature_extract.encodec import EnCodec
 from torch.optim.lr_scheduler import ExponentialLR, StepLR
 from torch.utils.data import DataLoader
 
@@ -116,25 +115,21 @@ def main():
         type=int,
         help="rank for distributed training. no need to explictly specify.",
     )
+    parser.add_argument(
+        "--world_size",
+        default=1,
+        type=int,
+        help="Number of processes for distributed training. No need to explicitly specify.",
+    )
     args = parser.parse_args()
 
+    # Initialize distributed training settings
     args.distributed = False
-    if not torch.cuda.is_available():
-        device = torch.device("cpu")
-    else:
-        device = torch.device("cuda")
-        # effective when using fixed size inputs
-        # see https://discuss.pytorch.org/t/what-does-torch-backends-cudnn-benchmark-do/5936
-        torch.backends.cudnn.benchmark = True
-        torch.cuda.set_device(args.rank)
-        # setup for distributed training
-        # see example: https://github.com/NVIDIA/apex/tree/master/examples/simple/distributed
-        if "WORLD_SIZE" in os.environ:
-            args.world_size = int(os.environ["WORLD_SIZE"])
-            args.distributed = args.world_size > 1
-        if args.distributed:
-            torch.distributed.init_process_group(backend="nccl", init_method="env://")
+    if "WORLD_SIZE" in os.environ:
+        args.world_size = int(os.environ["WORLD_SIZE"])
+        args.distributed = args.world_size > 1
 
+    args.rank = int(os.environ["RANK"]) if "RANK" in os.environ else 0
     # suppress logging for distributed training
     if args.rank != 0:
         sys.stdout = open(os.devnull, "w")
@@ -159,6 +154,21 @@ def main():
             format="%(asctime)s (%(module)s:%(lineno)d) %(levelname)s: %(message)s",
         )
         logging.warning("Skip DEBUG/INFO messages")
+
+    logging.info(f"World size: {args.world_size}")
+    logging.info(f"Local rank: {args.rank}")
+
+    if args.distributed:
+        torch.distributed.init_process_group(backend="nccl", init_method="env://")
+        args.rank = torch.distributed.get_rank()
+
+    if not torch.cuda.is_available():
+        device = torch.device("cpu")
+    else:
+        device = torch.device(f"cuda:{args.rank}")
+        torch.cuda.set_device(args.rank)
+        # see https://discuss.pytorch.org/t/what-does-torch-backends-cudnn-benchmark-do/5936
+        torch.backends.cudnn.benchmark = True
 
     # check directory existence
     if not os.path.exists(args.outdir):
@@ -197,8 +207,7 @@ def main():
         token_list_path=args.token_list,
         token_column=args.token_column,
         is_inference=False,
-        # prompt_prefix_mode=config.get("prompt_prefix_mode", 0), # for VALL-E
-        # max_prompt_frame_length=config.get("max_prompt_frame_length", 225), # for VALL-E
+        prompt_strategy=config.get("prompt_strategy", "same"),
         allow_cache=config.get("allow_cache", False),  # keep compatibility
     )
     logging.info(f"The number of training files = {len(train_dataset)}.")
@@ -210,8 +219,7 @@ def main():
         token_list_path=args.token_list,
         token_column=args.token_column,
         is_inference=False,
-        # prompt_prefix_mode=config.get("prompt_prefix_mode", 0), # for VALL-E
-        # max_prompt_frame_length=config.get("max_prompt_frame_length", 225), # for VALL-E
+        prompt_strategy=config.get("prompt_strategy", "same"),
         allow_cache=config.get("allow_cache", False),  # keep compatibility
     )
     logging.info(f"The number of development files = {len(dev_dataset)}.")
@@ -255,7 +263,7 @@ def main():
         ),
         "dev": DataLoader(
             dataset=dataset["dev"],
-            shuffle=False if args.distributed else True,
+            shuffle=False,
             collate_fn=collater,
             batch_size=config["batch_size"],
             num_workers=config["num_workers"],
@@ -292,10 +300,10 @@ def main():
                 stats,  # this is used to denormalized the converted features,
                 device,
             )
-        elif vocoder_type == "encodec":
-            vocoder = EncodecModel.encodec_model_24khz()
-            vocoder.set_target_bandwidth(6.0)
-            vocoder.to(device)
+        elif vocoder_type in ["encodec", "encodec_24khz"]:
+            vocoder = EnCodec(fs=24, device=device)
+        elif vocoder_type == "encodec_48khz":
+            vocoder = EnCodec(fs=48, device=device)
         else:
             vocoder = Vocoder(
                 config["vocoder"]["checkpoint"],
@@ -317,7 +325,7 @@ def main():
         )
 
     # define criterions
-    if config.get("criterions", None):
+    if config.get("criterions", None) is not None:
         criterion = {
             criterion_class: getattr(jatts.losses, criterion_class)(
                 **criterion_paramaters
@@ -325,7 +333,8 @@ def main():
             for criterion_class, criterion_paramaters in config["criterions"].items()
         }
     else:
-        raise ValueError("Please specify criterions in the config file.")
+        logging.info("No criterions are specified. Please make sure this is intended.")
+        criterion = None
 
     # define optimizers and schedulers
     optimizer_class = getattr(
@@ -345,19 +354,20 @@ def main():
 
     if args.distributed:
         # wrap model for distributed training
-        try:
-            from apex.parallel import DistributedDataParallel
-        except ImportError:
-            raise ImportError(
-                "apex is not installed. please check https://github.com/NVIDIA/apex."
-            )
-        model = DistributedDataParallel(model)
+        model = torch.nn.parallel.DistributedDataParallel(
+            model,
+            device_ids=[args.rank],
+            output_device=args.rank,
+            find_unused_parameters=True,
+        )
+        logging.info("Model wrapped with DistributedDataParallel.")
 
     # show settings
     logging.info(model)
     logging.info(optimizer)
     logging.info(scheduler)
-    logging.info(criterion)
+    if criterion is not None:
+        logging.info(criterion)
 
     # define trainer
     trainer_class = getattr(

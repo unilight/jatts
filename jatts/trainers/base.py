@@ -68,7 +68,8 @@ class Trainer(object):
         self.backward_steps = 0
         self.all_loss = 0.0
         self.tqdm = tqdm(
-            initial=self.steps, total=self.config["train_max_steps"], desc="[train]"
+            initial=self.steps, total=self.config["train_max_steps"], desc="[train]",
+            disable=not self.config["rank"] == 0
         )
         while True:
             # train one epoch

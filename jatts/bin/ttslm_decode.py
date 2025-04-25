@@ -139,7 +139,7 @@ def main():
         token_list_path=args.token_list,
         token_column=args.token_column,
         is_inference=True,
-        # prompt_path=config.get("prompt_path", None),
+        prompt_strategy="given",
         allow_cache=config.get("allow_cache", False),  # keep compatibility
     )
     logging.info(f"Dataset size = {len(dataset)}.")
@@ -169,7 +169,10 @@ def main():
     logging.info(f"Loaded NAR model parameters from {args.nar_checkpoint}.")
 
     # load EnCodec decoder
-    encodec_model = EnCodec()
+    if config.get("vocoder_type", "encodec") in ["encodec", "encodec_24khz"]:
+        encodec_model = EnCodec(fs=24, device=device)
+    elif config.get("vocoder_type", "encodec") == "encodec_48khz":
+        encodec_model = EnCodec(fs=48, device=device)
 
     # start generation
     with torch.no_grad(), tqdm(dataset, desc="[decode]") as pbar:
@@ -189,9 +192,12 @@ def main():
                 start=item.get("prompt_start", None),
                 end=item.get("prompt_end", None),
             )
-            prompts = encodec_model.encode(prompt_audio, config["sampling_rate"], device)
-            prompts = prompts.squeeze(0).cpu().numpy()  # q, t
-            prompts = torch.tensor(prompts, dtype=torch.long).to(device).transpose(0, 1) # q, t -> t, q
+            prompts = encodec_model.encode(
+                prompt_audio, config["sampling_rate"]
+            ).squeeze(
+                0
+            )  # [q, t]
+            prompts = prompts.to(device).transpose(0, 1)  # q, t -> t, q
 
             # AR model inference
             ar_codes = ar_model(
@@ -200,7 +206,7 @@ def main():
             ar_codes = [code.unsqueeze(-1) for code in ar_codes]
 
             # NAR model inference
-            nar_codes = nar_model([x], [prompts], resps_list=ar_codes) # q, t
+            nar_codes = nar_model([x], [prompts], resps_list=ar_codes)  # q, t
             outs = nar_codes[0]
 
             logging.info(
@@ -229,7 +235,9 @@ def main():
 
             encodec_model.decode_to_file(
                 resps=prompts,
-                path=Path(os.path.join(config["outdir"], "wav_prompt", f"{sample_id}.wav")),
+                path=Path(
+                    os.path.join(config["outdir"], "wav_prompt", f"{sample_id}.wav")
+                ),
             )
 
 

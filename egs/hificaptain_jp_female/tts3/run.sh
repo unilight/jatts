@@ -18,8 +18,8 @@ verbose=1      # verbosity level (lower is less info)
 n_gpus=1       # number of gpus in training
 n_jobs=16      # number of parallel jobs in feature extraction
 
-ar_conf=conf/valle_ar.v1.yaml
-nar_conf=conf/valle_nar.v1.yaml
+ar_conf=conf/valle_ar.given.bs32.yaml
+nar_conf=conf/valle_nar.given.bs32.yaml
 
 # dataset configuration
 # db_root=downloads
@@ -156,12 +156,14 @@ if [ "${stage}" -le 3 ] && [ "${stop_stage}" -ge 3 ]; then
 
     [ ! -e "${ar_expdir}" ] && mkdir -p "${ar_expdir}"
     cp "${token_list}" "${ar_expdir}/tokens.txt"
+
+    # multi-gpu training
     if [ "${n_gpus}" -gt 1 ]; then
-        log "Not Implemented yet."
-        train="python -m seq2seq_vc.distributed.launch --nproc_per_node ${n_gpus} -c tts-train"
+        train="torchrun --nnodes=1 --nproc_per_node=${n_gpus} ../../../jatts/bin/tts_train.py"
     else
         train="tts_train.py"
     fi
+
     log "Training start. See the progress via ${ar_expdir}/train.log."
     ${cuda_cmd} --gpu "${n_gpus}" "${ar_expdir}/train.log" \
         ${train} \
@@ -187,12 +189,14 @@ if [ "${stage}" -le 4 ] && [ "${stop_stage}" -ge 4 ]; then
 
     [ ! -e "${nar_expdir}" ] && mkdir -p "${nar_expdir}"
     cp "${token_list}" "${nar_expdir}/tokens.txt"
+
+    # multi-gpu training
     if [ "${n_gpus}" -gt 1 ]; then
-        log "Not Implemented yet."
-        train="python -m seq2seq_vc.distributed.launch --nproc_per_node ${n_gpus} -c tts-train"
+        train="torchrun --nnodes=1 --nproc_per_node=${n_gpus} ../../../jatts/bin/tts_train.py"
     else
         train="tts_train.py"
     fi
+
     log "Training start. See the progress via ${nar_expdir}/train.log."
     ${cuda_cmd} --gpu "${n_gpus}" "${nar_expdir}/train.log" \
         ${train} \

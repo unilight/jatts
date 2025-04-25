@@ -43,7 +43,7 @@ class VALLEBase(nn.Module):
 
     @property
     def n_prom_levels(self) -> int:
-        return 8
+        return self._n_prom_levels
 
     @property
     def resp_loss_only(self):
@@ -57,6 +57,9 @@ class VALLEBase(nn.Module):
         n_heads: int = 8,
         n_layers: int = 12,
         p_dropout: float = 0.1,
+        # codec related
+        n_prom_levels: int = 8,
+        n_resp_levels: int = 7, # this should be level - 1
         # prompt related
         prompt_prefix_mode: int = 1,
         prompt_max_frame_length: int = 225,
@@ -64,12 +67,12 @@ class VALLEBase(nn.Module):
         super().__init__()
         self.idim = idim  # not really used
         self.n_tokens = n_tokens
+        self._n_prom_levels = n_prom_levels
+        self._n_resp_levels = n_resp_levels
 
         # prompt preparation related
         self.prompt_prefix_mode = prompt_prefix_mode
         self.prompt_max_frame_length = prompt_max_frame_length
-
-        causal = self.causal
 
         # +1 to include the stop token
         n_stop_tokens = 1 if self.use_stop_token else 0
@@ -88,7 +91,7 @@ class VALLEBase(nn.Module):
                 d_model=d_model,
                 n_heads=n_heads,
                 p_dropout=p_dropout,
-                causal=causal,
+                causal=self.causal,
                 norm_type=self.norm_type,
                 n_levels=self.n_resp_levels,
             )
@@ -248,7 +251,7 @@ class VALLEBase(nn.Module):
 
             # Compute cross-entropy loss
             # This measures how well the model's predictions match the targets
-            self.loss = dict(
+            loss = dict(
                 nll=F.cross_entropy(
                     torch.cat(h_list),
                     torch.cat(y_list),
@@ -257,6 +260,8 @@ class VALLEBase(nn.Module):
             )
             # loss = sum(loss.values())
             # return loss
+        else:
+            loss = None
 
         # Sample from output distribution
         if return_all_resp:
@@ -272,4 +277,4 @@ class VALLEBase(nn.Module):
             logits = torch.stack([hi[-1] for hi in h_list])
             ret = Categorical(logits=logits / sampling_temperature).sample()
 
-        return ret
+        return ret, loss

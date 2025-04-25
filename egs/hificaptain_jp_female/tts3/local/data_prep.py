@@ -85,10 +85,6 @@ if __name__ == "__main__":
     # fieldnames: sample_id,wav_path,original_text
     # format: BASIC5000_0001.wav
     data = {"train": [], "dev": [], "test": []}
-    tasks = []
-    for _set in SETS:
-        for sample_id, original_text in texts[_set].items():
-            tasks.append((_set, sample_id, original_text))
     with ProcessPoolExecutor() as executor:
         arg_tuples = [(args, _set, sample_id, original_text) for _set in SETS for sample_id, original_text in texts[_set].items()]
         results = list(tqdm(executor.map(process_sample_wrapper, arg_tuples), total=len(arg_tuples)))

@@ -12,16 +12,19 @@ fmin: 0                 # Minimum freq in mel basis calculation.
 fmax: null               # Maximum frequency in mel basis calculation.
 global_gain_scale: 1.0   # Will be multiplied to all of waveform.
 
-feat_list: ["encodec"]
-prompt_feat_list: ["encodec"]
-out_feat_type: encodec
+feat_list: ["encodec_24khz"]
+prompt_feat_list: ["encodec_24khz"]
+out_feat_type: encodec_24khz
+prompt_strategy: "given"  # one of: same, given
 
 ###########################################################
 #              NETWORK ARCHITECTURE SETTING               #
 ###########################################################
-model_type: VALLENAR
+model_type: VALLEAR
 model_params:
     n_tokens: 1024
+    n_prom_levels: 8
+    n_resp_levels: 1                # AR model: 1; NAR model: levels (4 or 8) - 1
     prompt_prefix_mode: 1           # 0: no prefix, 1: use random segment of provided prompt, 2: use segment of same utterance
     prompt_max_frame_length: 225    # Maximum length of prompt in frames.
 
@@ -30,14 +33,13 @@ model_params:
 ###########################################################
 trainer_type: VALLETrainer
 collater_type: VALLECollater
-criterions:
-    "CFMLoss": {}
 
 ###########################################################
 #                   INFERENCE SETTING                     #
 ###########################################################
 vocoder:
-    vocoder_type: encodec
+    vocoder_type: encodec_24khz
+max_ar_steps: 1000
 
 ###########################################################
 #                  DATA LOADER SETTING                    #

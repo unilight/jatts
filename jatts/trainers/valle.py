@@ -19,7 +19,7 @@ import soundfile as sf
 import torch
 from einops import rearrange
 from encodec import EncodecModel
-from encodec.utils import convert_audio
+from encodec.utils import convert_audio, save_audio
 from jatts.trainers.base import Trainer
 from jatts.utils import read_hdf5
 from joblib import load
@@ -46,31 +46,30 @@ class VALLETrainer(Trainer):
             ys = [y[0, :].to(self.device).long() for y in batch["ys"]]  # t
         elif self.config["model_type"] == "VALLENAR":
             # use all quantization levels as targets
-            ys = [y.transpose(1, 0).to(self.device).long() for y in batch["ys"]]  # q, t -> t, q
+            ys = [
+                y.transpose(1, 0).to(self.device).long() for y in batch["ys"]
+            ]  # q, t -> t, q
+
+        # print(sum([x.shape[0] for x in xs]) + sum([p.shape[0] for p in prompts]) + sum([y.shape[0] for y in ys]))
 
         # model forward
-        nll_loss = self.model(xs, prompts, ys)
+        ret, loss = self.model(xs, prompts, ys)
 
         # loss computation
-        gen_loss = 0.0
-        nll_loss = self.model.loss
-
-        nll_loss = sum(nll_loss.values())
+        loss = sum(loss.values())
         self.total_train_loss["train/nll_loss"] += (
-            nll_loss.item() / self.gradient_accumulate_steps
+            loss.item() / self.gradient_accumulate_steps
         )
-        gen_loss += nll_loss
 
         self.total_train_loss["train/loss"] += (
-            gen_loss.item() / self.gradient_accumulate_steps
+            loss.item() / self.gradient_accumulate_steps
         )
 
         # update model
         if self.gradient_accumulate_steps > 1:
-            gen_loss = gen_loss / self.gradient_accumulate_steps
-        gen_loss.backward()
-        self.all_loss += gen_loss.item()
-        del gen_loss
+            loss = loss / self.gradient_accumulate_steps
+        loss.backward()
+        self.all_loss += loss.item()
 
         self.backward_steps += 1
         if self.backward_steps % self.gradient_accumulate_steps > 0:
@@ -97,7 +96,7 @@ class VALLETrainer(Trainer):
 
         # parse batch
         xs = [x.to(self.device).long() for x in batch["xs"]]
-        ys = [y.to(self.device).long() for y in batch["ys"]]
+        ys = [y.transpose(1, 0).to(self.device).long() for y in batch["ys"]]
         # NOTE(unilight) 20250417: use random training utterance as the prompt during validation
         prompts = [p.to(self.device).long() for p in batch["pm"]]
 
@@ -119,59 +118,73 @@ class VALLETrainer(Trainer):
                 codes = self.model([x], [pm], max_steps=self.config["max_ar_steps"])
                 codes = rearrange(codes[0], "t -> 1 1 t")
                 assert codes.dim() == 3
-                wav = self.vocoder.decode([(codes, None)])
-                sf.write(
+                wav = (
+                    self.vocoder.model.decode([(codes, None)]).squeeze(0).cpu()
+                )  # 1/2, t
+                save_audio(
+                    wav,
                     os.path.join(dirname, "wav", f"{idx}_gen.wav"),
-                    wav.cpu().numpy()[0, 0],
-                    self.vocoder.sample_rate,
-                    "PCM_16",
+                    self.vocoder.model.sample_rate,
+                    rescale=self.vocoder.rescale,
                 )
             else:
                 # NAR mode
-                for i in range(1, 8):
+                for i in range(1, self.config["model_params"]["n_resp_levels"] + 1):
                     y_ = [
-                        y[:i].to(self.device),
+                        y[:, :i].to(self.device),
                     ]
                     codes = self.model(
                         [x],
                         [pm],
                         resps_list=y_,
                         sampling_temperature=0.2,
-                    )[0] # q, t
-                    codes = rearrange(codes, "q t -> 1 q t")
+                    )[
+                        0
+                    ]  # q, t
+                    codes = rearrange(codes, "t q -> 1 q t")
                     assert codes.dim() == 3
-                    wav = self.vocoder.decode([(codes, None)])
-                    sf.write(
+                    wav = (
+                        self.vocoder.model.decode([(codes, None)]).squeeze(0).cpu()
+                    )  # 1/2, t
+                    save_audio(
+                        wav,
                         os.path.join(dirname, "wav", f"{idx}_gen_{i}.wav"),
-                        wav.cpu().numpy()[0, 0],
-                        self.vocoder.sample_rate,
-                        "PCM_16",
+                        self.vocoder.model.sample_rate,
+                        rescale=self.vocoder.rescale,
                     )
 
             logging.info(
-                "inference speed = generated 1 second of waveform takes %.1f seconds."
+                "inference speed = generated 1 second of waveform takes %.2f seconds."
                 % (
-                    int(wav.shape[2] / self.vocoder.sample_rate)
+                    int(wav.shape[1] / self.vocoder.model.sample_rate)
                     / (time.time() - start_time)
                 )
             )
 
             # save prompt
-            wav = self.vocoder.decode([(rearrange(pm, "t q -> 1 q t"), None)])
-            sf.write(
+            wav = (
+                self.vocoder.model.decode([(rearrange(pm, "t q -> 1 q t"), None)])
+                .squeeze(0)
+                .cpu()
+            )  # 1/2, t
+            save_audio(
+                wav,
                 os.path.join(dirname, "wav", f"{idx}_prompt.wav"),
-                wav.cpu().numpy()[0, 0],
-                self.vocoder.sample_rate,
-                "PCM_16",
+                self.vocoder.model.sample_rate,
+                rescale=self.vocoder.rescale,
             )
 
             # save gt
-            wav = self.vocoder.decode([(rearrange(y, "q t -> 1 q t"), None)])
-            sf.write(
+            wav = (
+                self.vocoder.model.decode([(rearrange(y, "t q -> 1 q t"), None)])
+                .squeeze(0)
+                .cpu()
+            )  # 1/2, t
+            save_audio(
+                wav,
                 os.path.join(dirname, "wav", f"{idx}_gt.wav"),
-                wav.cpu().numpy()[0, 0],
-                self.vocoder.sample_rate,
-                "PCM_16",
+                self.vocoder.model.sample_rate,
+                rescale=self.vocoder.rescale,
             )
 
             if idx >= self.config["num_save_intermediate_results"]:

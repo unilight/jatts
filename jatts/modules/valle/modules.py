@@ -13,6 +13,7 @@ from einops import rearrange
 from torch import Tensor, einsum, nn
 from torch.nn.utils.rnn import pad_sequence
 from torch.utils.checkpoint import checkpoint
+from torch.distributed.algorithms._checkpoint.checkpoint_wrapper import checkpoint_wrapper
 
 def _create_mask(l, device):
     """1 is valid region and 0 is invalid."""
@@ -208,6 +209,7 @@ class Block(nn.Sequential):
             norm_type=norm_type,
             n_levels=n_levels,
         )
+        self.attn = checkpoint_wrapper(self.attn)
         self.ffn = PrenormResidual(
             nn.Sequential(
                 nn.Linear(d_model, d_model * 4),
@@ -230,7 +232,7 @@ class Block(nn.Sequential):
         """
         poor_in_vram = True
         if x.requires_grad and poor_in_vram:
-            x = checkpoint(self.attn, x, m, l)
+            x = checkpoint(self.attn, x, m, l, use_reentrant=False)
         else:
             x = self.attn(x, m, l)
         x = self.ffn(x, m, l)

@@ -28,9 +28,6 @@ from tqdm import tqdm
 # from s3prl_vc.upstream.interface import get_upstream
 
 
-
-
-
 def main():
     """Run preprocessing process."""
     parser = argparse.ArgumentParser(
@@ -152,8 +149,10 @@ def main():
                 )
                 exit(1)
 
-        elif feat_type == "encodec":
-            extractor = EnCodec()
+        elif feat_type == "encodec" or feat_type == "encodec_24khz":
+            extractor = EnCodec(fs=24, device=device)
+        elif feat_type == "encodec_48khz":
+            extractor = EnCodec(fs=48, device=device)
         # else:
         #     checkpoint = config["feat_list"][feat_type]["checkpoint"]
         #     upstream_model = get_upstream(feat_type).to(device)
@@ -172,8 +171,16 @@ def main():
     if "prompt_feat_list" in config:
         prompt_extractors = {}
         for feat_type in config["prompt_feat_list"]:
-            if feat_type == "encodec":
-                extractor = EnCodec()
+            if feat_type == "encodec" or feat_type == "encodec_24khz":
+                extractor = EnCodec(
+                    fs=config.get("encodec_fs", 24),
+                    device=device,
+                )
+            elif feat_type == "encodec_48khz":
+                extractor = EnCodec(
+                    fs=config.get("encodec_fs", 48),
+                    device=device,
+                )
             prompt_extractors[feat_type] = extractor
     else:
         prompt_extractors = None
@@ -277,8 +284,8 @@ def main():
                 )
             elif feat_type == "spkemb":
                 feat = extractor.forward(item["wav_path"])
-            elif feat_type == "encodec":
-                feat = extractor.encode(audio, config["sampling_rate"], device)
+            elif feat_type in ["encodec", "encodec_24khz", "encodec_48khz"]:
+                feat = extractor.encode(audio, config["sampling_rate"])
                 feat = feat.squeeze(0).cpu().numpy()  # q, t
             else:
                 logging.info(f"Not supported feature type {feat_type}. Skip.")
@@ -298,11 +305,13 @@ def main():
                 feat_type,
                 feat.astype(np.float32),
             )
-        if prompt_extractors is not None:
-            assert prompt_audio is not None, "Prompt audio is not given."
+        if prompt_audio is not None:
+            assert (
+                prompt_extractors is not None
+            ), "Prompt extractor cannot be none if prompt audio is given."
             for feat_type, extractor in prompt_extractors.items():
-                if feat_type == "encodec":
-                    feat = extractor.encode(prompt_audio, config["sampling_rate"], device)
+                if feat_type in ["encodec", "encodec_24khz", "encodec_48khz"]:
+                    feat = extractor.encode(prompt_audio, config["sampling_rate"])
                     feat = feat.squeeze(0).cpu().numpy()  # q, t
                 else:
                     logging.info(f"Not supported feature type {feat_type}. Skip.")

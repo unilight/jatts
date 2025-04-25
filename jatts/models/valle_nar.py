@@ -15,7 +15,7 @@ from .valle_base import VALLEBase
 class VALLENAR(VALLEBase):
     @property
     def n_resp_levels(self):
-        return 7
+        return self._n_resp_levels
 
     @property
     def causal(self):
@@ -49,15 +49,17 @@ class VALLENAR(VALLEBase):
             [t'' l], l=8 if testing. empty list will be returned during training.
         """
 
+        # basically there should be only one level
         n_levels_set = {r.shape[-1] for r in resps_list}
-
         if len(n_levels_set) > 1:
             raise ValueError(f"Please give only one level, got {n_levels_set}.")
 
+        # this is to get that only level
         n_levels = next(iter(n_levels_set))
 
         device = text_list[0].device
 
+        # this basically means n_levels == 8, which means training
         if n_levels == self.n_resp_levels + 1:
             assert resps_list is not None
 
@@ -68,7 +70,7 @@ class VALLENAR(VALLEBase):
 
             quant_levels = quant_levels.to(device=device)
 
-            _ = super().forward(
+            _, loss = super().forward(
                 text_list,
                 proms_list,
                 prev_list,
@@ -80,10 +82,15 @@ class VALLENAR(VALLEBase):
 
             # Yes, just nothing as we are training
             prev_list = []
+
+            return prev_list, loss
+        
+        # this basically means n_levels == 1, which means inference
         else:
             prev_list = resps_list
 
             while True:
+                # again, basically there is only one level
                 level = prev_list[0].shape[-1] - 1
 
                 if level >= self.n_resp_levels:
@@ -91,7 +98,7 @@ class VALLENAR(VALLEBase):
 
                 quant_levels = torch.full((len(text_list),), level, device=device)
 
-                resp_list = super().forward(
+                resp_list, loss = super().forward(
                     text_list,
                     proms_list,
                     prev_list,
@@ -101,9 +108,12 @@ class VALLENAR(VALLEBase):
                     sampling_temperature=sampling_temperature,
                 )
 
+                # concatenate the generated codes with the previous codes
+                # along the last dimension
+                # prev_list: [t'' l] * b
                 prev_list = [
                     torch.cat([rs, r.unsqueeze(-1)], dim=-1)
                     for rs, r in zip(prev_list, resp_list)
                 ]
-
-        return prev_list
+            return prev_list
+        
