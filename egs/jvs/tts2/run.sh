@@ -165,12 +165,14 @@ if [ "${stage}" -le 3 ] && [ "${stop_stage}" -ge 3 ]; then
     [ ! -e "${expdir}" ] && mkdir -p "${expdir}"
     cp "${dumpdir}/${train_set}/stats.h5" "${expdir}/"
     cp "${token_list}" "${expdir}/tokens.txt"
+
+    # multi-gpu training
     if [ "${n_gpus}" -gt 1 ]; then
-        log "Not Implemented yet."
-        train="python -m seq2seq_vc.distributed.launch --nproc_per_node ${n_gpus} -c tts-train"
+        train="torchrun --nnodes=1 --nproc_per_node=${n_gpus} ../../../jatts/bin/tts_train.py"
     else
         train="tts_train.py"
     fi
+
     log "Training start. See the progress via ${expdir}/train.log."
     ${cuda_cmd} --gpu "${n_gpus}" "${expdir}/train.log" \
         ${train} \
