@@ -170,11 +170,28 @@ class VALLEBase(nn.Module):
         Returns:
             y: Tensor of sampled token indices if return_all_resp is False, otherwise a list of response tensors.
         """
-        # Crop prompt
-        proms_list = [
-            prepare_prompt(self.prompt_prefix_mode, p, self.prompt_max_frame_length)
-            for p in proms_list
-        ]
+        # prefix mode 4: use resps list, split into 2 segments. First segment is used as prompt, second segment is used as response.
+        if self.prompt_prefix_mode == 4:
+            # during training, proms_list is a list of None
+            if targ_list is not None:
+                assert all(p is None for p in proms_list), "prompts should be a list of None"
+
+                # assert that every item in proms_list is larger than prompt_max_frame_length
+                assert all(
+                    r.shape[0] > self.prompt_max_frame_length for r in resps_list
+                ), f"all prompts should be larger than {self.prompt_max_frame_length}"
+
+                for i in range(len(resps_list)):
+                    # split into 2 segments
+                    proms_list[i] = resps_list[i][: self.prompt_max_frame_length]
+                    resps_list[i] = resps_list[i][self.prompt_max_frame_length :]
+                    targ_list[i] = targ_list[i][self.prompt_max_frame_length :]
+        else:
+            # Crop prompt
+            proms_list = [
+                prepare_prompt(self.prompt_prefix_mode, p, self.prompt_max_frame_length)
+                for p in proms_list
+            ]
 
         # Merge text, prompt, and response embeddings
         # _samplewise_merge_tensors concatenates the embeddings for each sample,
@@ -228,9 +245,11 @@ class VALLEBase(nn.Module):
 
             # Prepare targets for loss computation
             for i in range(len(text_prom_list)):
+                # this is for NAR training
                 if self.resp_loss_only:
                     # If only computing loss on response, ignore all text and prompt
                     text_prom_list[i][:] = self.ignore_index
+                # this is for AR training
                 else:
                     # Shift targets to align with predictions
                     text_prom_list[i] = text_prom_list[i].roll(-1, dims=0)

@@ -169,15 +169,10 @@ class Trainer(object):
         self.model.eval()
 
         # save intermediate result
-        for eval_steps_per_epoch, batch in enumerate(
-            tqdm(self.data_loader["dev"], desc="[eval]"), 1
-        ):
-            if eval_steps_per_epoch == 1:
-                self._genearete_and_save_intermediate_result(batch)
-
+        self._genearete_and_save_intermediate_result(next(iter(self.data_loader["dev"])))
+        
         logging.info(
-            f"(Steps: {self.steps}) Finished evaluation "
-            f"({eval_steps_per_epoch} steps per epoch)."
+            f"(Steps: {self.steps}) Finished evaluation."
         )
 
         # restore mode

@@ -33,16 +33,22 @@ class VALLECollater(object):
         xs = []
         ys = []
         pm = []
+        pm_texts = []
 
         for b in batch:
-            xs.append(torch.from_numpy(b["token_indices"]))
+            # print(b["token_indices"].shape, b["prompt_indices"].shape)
+            # concatenate the token indices and prompt indices
+            xs.append(torch.from_numpy(b["token_indices"]))            
             ys.append(torch.from_numpy(b[y_encodec_key]))
             pm.append(torch.from_numpy(b[prompt_encodec_key]))
+            if "prompt_indices" in b:
+                pm_texts.append(torch.from_numpy(b["prompt_indices"]))
 
         items = {
             "xs": xs,
             "ys": ys,
             "pm": pm,
+            "pm_texts": pm_texts,
         }
 
         return items

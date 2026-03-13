@@ -28,6 +28,12 @@ from pathlib import Path
 # from jatts.vocoder.griffin_lim import Spectrogram2Waveform
 # from jatts.vocoder.encodec import EnCodec_decoder
 
+from torch.serialization import add_safe_globals
+from jatts.schedulers.exponential_lr_warmup import WarmupExponentialLR
+from torch.optim.lr_scheduler import ExponentialLR, StepLR
+from torch.optim.adamw import AdamW
+
+add_safe_globals([WarmupExponentialLR, ExponentialLR, StepLR, AdamW])
 
 def main():
     """Run decoding process."""
@@ -154,7 +160,7 @@ def main():
     model_class = getattr(jatts.models, "VALLEAR")
     ar_model = model_class(**ar_config["model_params"])
     ar_model.load_state_dict(
-        torch.load(args.ar_checkpoint, map_location="cpu", weights_only=True)["model"]
+        torch.load(args.ar_checkpoint, map_location="cpu", weights_only=False)["model"]
     )
     ar_model = ar_model.eval().to(device)
     logging.info(f"Loaded AR model parameters from {args.ar_checkpoint}.")
@@ -163,7 +169,7 @@ def main():
     nar_model_class = getattr(jatts.models, "VALLENAR")
     nar_model = nar_model_class(**nar_config["model_params"])
     nar_model.load_state_dict(
-        torch.load(args.nar_checkpoint, map_location="cpu", weights_only=True)["model"]
+        torch.load(args.nar_checkpoint, map_location="cpu", weights_only=False)["model"]
     )
     nar_model = nar_model.eval().to(device)
     logging.info(f"Loaded NAR model parameters from {args.nar_checkpoint}.")
@@ -181,8 +187,14 @@ def main():
 
             # prepare input
             x = torch.tensor(item["token_indices"], dtype=torch.long).to(device)
-            # prompts = torch.tensor(item["prompt_encodec"], dtype=torch.long).to(device)
-            # model forward
+            if config["inference_append_prompt_token"]:
+                # concat pm_text and x
+                pm_text = torch.tensor(item["prompt_indices"], dtype=torch.long).to(device)
+                x_for_ar = torch.cat([pm_text, x]).to(device).long()
+            else:
+                x_for_ar = x
+            
+            # start counding
             start_time = time.time()
 
             # extract encodec
@@ -201,7 +213,7 @@ def main():
 
             # AR model inference
             ar_codes = ar_model(
-                [x], [prompts], max_steps=config.get("max_ar_steps", 1000)
+                [x_for_ar], [prompts], max_steps=config.get("max_ar_steps", 1000)
             )
             ar_codes = [code.unsqueeze(-1) for code in ar_codes]
 

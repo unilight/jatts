@@ -315,11 +315,6 @@ class E2TTSTrainer(object):
         ilens = batch["ilens"].to(self.device)
         olens = batch["olens"].to(self.device)
 
-        print("xs", xs.shape)
-        print("ys", ys.shape)
-        print("ilens", ilens.shape)
-        print("olens", olens.shape)
-
         spkembs = batch[
             "spkembs"
         ]  # if no spkembs, this is default set to None by collator

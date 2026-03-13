@@ -439,8 +439,11 @@ class VITS(torch.nn.Module):
 
         # integrate speaker embedding. shape: [B, spk_embed_dim]
         # thus we need to transpose hs to [B, T, dim], then transpose back
-        if self.spk_embed_dim is not None:
-            hs = self._integrate_with_spk_embed(hs.transpose(1, 2), spembs).transpose(1, 2)
+        # if self.spk_embed_dim is not None:
+        #     hs = self._integrate_with_spk_embed(hs.transpose(1, 2), spembs).transpose(1, 2)
+        #     if is_inference:
+        #         m_p = self._integrate_with_spk_embed(m_p.transpose(1, 2), spembs).transpose(1, 2)
+        #         logs_p = self._integrate_with_spk_embed(logs_p.transpose(1, 2), spembs).transpose(1, 2)
 
         # alignment search, VAE, flow
         d_masks = make_pad_mask(ilens).to(xs.device)

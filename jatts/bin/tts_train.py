@@ -21,6 +21,7 @@ import torch
 import yaml
 from jatts.datasets.tts_dataset import TTSDataset
 from jatts.schedulers.warmup_lr import WarmupLR
+from jatts.schedulers.exponential_lr_warmup import WarmupExponentialLR
 
 # from jatts.losses import Seq2SeqLoss, GuidedMultiHeadAttentionLoss
 from jatts.utils import read_hdf5
@@ -38,6 +39,7 @@ scheduler_classes = {
     "warmuplr": WarmupLR,
     "exponentiallr": ExponentialLR,
     "StepLR": StepLR,
+    "WarmupExponentialLR": WarmupExponentialLR,
 }
 
 

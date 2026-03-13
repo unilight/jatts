@@ -18,7 +18,9 @@ def prepare_prompt(prefix_mode:int, prompt, max_prompt_length:int):
                 0, prompt.shape[0] - max_prompt_length
             )
             prompt = prompt[start : start + max_prompt_length]
+        return prompt
+    # mode 3: no cropping
+    elif prefix_mode == 3:
+        return prompt
     else:
         raise ValueError(f"Unsupported prefix mode: {prefix_mode}")
-
-    return prompt
