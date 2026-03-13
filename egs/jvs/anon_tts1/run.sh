@@ -18,22 +18,23 @@ verbose=1      # verbosity level (lower is less info)
 n_gpus=1       # number of gpus in training
 n_jobs=16      # number of parallel jobs in feature extraction
 
-accelerate_conf=conf/single-node-1-gpu.yaml
-conf=conf/matcha_tts.mas.v1.yaml
+conf=conf/fastspeech2.v1.yaml
 
 # dataset configuration
 # db_root=downloads
-db_root=/data/group1/z44476r/Corpora/hi-fi-captain/ja-JP/female
+jsut_db_root=/data/group1/z44476r/Corpora/jsut
+jvs_db_root=/data/group1/z44476r/Corpora/jvs_ver1
 dumpdir=dump                # directory to dump full features
 
 # data preparation related
+num_dev=250
+num_test=250
 julius_clean=false
-create_histogram=false
 
 # text related setting
 token_type="phn"
 token_column="phonemes"
-g2p=pyopenjtalk         # g2p method.
+g2p=julius              # g2p method.
 oov="\<unk\>"           # Out of vocabrary symbol.
 blank="\<blank\>"       # CTC blank symbol.
 sos_eos="\<sos/eos\>"   # sos and eos symbols.
@@ -57,16 +58,16 @@ checkpoint=""               # checkpoint path to be used for decoding
                             # (e.g. <path>/<to>/checkpoint-400000steps.pkl)
 
 # evaluation related setting
-eval_metrics="mcd sheet asr"
+eval_metrics="mcd sheet spkemb asr"
 
 # shellcheck disable=SC1091
 . utils/parse_options.sh || exit 1;
 
 set -euo pipefail
 
-train_set="train"
-dev_set="dev"
-test_set="test"
+train_set="jsut_original_train"
+dev_set="jsut_original_dev"
+test_set="jvs_test_parallel_with_ref"
 
 token_listdir="${dumpdir}/token_list/${train_set}_${token_type}"
 if [ "${cleaner}" != none ]; then
@@ -78,20 +79,45 @@ fi
 token_list="${token_listdir}/tokens.txt"
 
 # ========================== Main stages start from here. ==========================
-
-
+                                       
 if [ ${stage} -le 0 ] && [ ${stop_stage} -ge 0 ]; then
     log "stage 0: Data preparation"
 
-    mkdir -p "data"
+    log "Making JSUT csv files"
+    python local/jsut_data_prep_pre_julius.py \
+        --train_set "${train_set}.pre_julius" \
+        --dev_set "${dev_set}.pre_julius" \
+        --test_set "jsut_test.pre_julius" \
+        --num_dev "${num_dev}" \
+        --num_test "${num_test}" \
+        --db_root "${jsut_db_root}/jsut_ver1.1" \
+        --outdir "data"
 
-    log "Making csv files"
-    python local/data_prep.py \
+    log "Preparing JVS test set"
+    python local/jvs_data_prep_pre_julius.py \
+        --original_csv "data/jvs_original_csvs/test_parallel_with_ref.csv" \
+        --db_root "${jvs_db_root}" \
+        --out "data/${test_set}.pre_julius.csv"
+
+    log "Run segmentation with Julius. This may take 15 minutes."
+    utils/run_julius.sh \
         --train_set "${train_set}" \
         --dev_set "${dev_set}" \
-        --test_set "${test_set}" \
-        --db_root "${db_root}" \
-        --outdir "data"
+        --clean "${julius_clean}"
+
+    for _set in "${train_set}" "${dev_set}"; do
+        log "Collecting Julius segmentation results for ${_set}"
+        python utils/data_prep_post_julius.py \
+            --juliusdir "data/julius/tmp" \
+            --conf "${conf}" \
+            --original_csv "data/${_set}.pre_julius.csv" \
+            --out "data/${_set}.csv"
+    done
+
+    log "Preparing ${test_set} set"
+    python utils/data_prep_post_for_test_set.py \
+        --original_csv "data/${test_set}.pre_julius.csv" \
+        --out "data/${test_set}.csv"
 fi
 
 if [ "${stage}" -le 1 ] && [ "${stop_stage}" -ge 1 ]; then
@@ -166,11 +192,15 @@ if [ "${stage}" -le 3 ] && [ "${stop_stage}" -ge 3 ]; then
     [ ! -e "${expdir}" ] && mkdir -p "${expdir}"
     cp "${dumpdir}/${train_set}/stats.h5" "${expdir}/"
     cp "${token_list}" "${expdir}/tokens.txt"
-
+    if [ "${n_gpus}" -gt 1 ]; then
+        log "Not Implemented yet."
+        train="python -m seq2seq_vc.distributed.launch --nproc_per_node ${n_gpus} -c tts-train"
+    else
+        train="tts_train.py"
+    fi
     log "Training start. See the progress via ${expdir}/train.log."
-    VENV_PYTHON="$MAIN_ROOT/tools/venv/bin/python"
     ${cuda_cmd} --gpu "${n_gpus}" "${expdir}/train.log" \
-    $VENV_PYTHON -m accelerate.commands.launch --config_file "${accelerate_conf}" ../../../jatts/bin/tts_train.py \
+        ${train} \
             --config "${conf}" \
             --train-csv "data/${train_set}_raw_feat.csv" \
             --dev-csv "data/${dev_set}_raw_feat.csv" \
@@ -190,13 +220,13 @@ if [ "${stage}" -le 4 ] && [ "${stop_stage}" -ge 4 ]; then
     [ -z "${checkpoint}" ] && checkpoint="$(ls -dt "${expdir}"/*.pkl | head -1 || true)"
     outdir="${expdir}/results/$(basename "${checkpoint}" .pkl)"
     pids=()
-    for name in dev_raw_feat "${test_set}"; do
+    for name in "${test_set}"; do
         [ ! -e "${outdir}/${name}" ] && mkdir -p "${outdir}/${name}"
         [ "${n_gpus}" -gt 1 ] && n_gpus=1
         log "Decoding start. See the progress via ${outdir}/${name}/decode.log."
         ${cuda_cmd} --gpu "${n_gpus}" "${outdir}/${name}/decode.log" \
             tts_decode.py \
-                --csv "data/${name}.csv" \
+                --csv "data/${test_set}.csv" \
                 --stats "${expdir}/stats.h5" \
                 --token-list "${expdir}/tokens.txt" \
                 --token-column "${token_column}" \

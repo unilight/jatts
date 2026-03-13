@@ -25,6 +25,8 @@ TRIM_THRESHOLD_IN_DB = 40
 TRIM_FRAME_SIZE = 4096
 TRIM_HOP_SIZE = 600
 
+DURATION_MIN = 1.5
+
 SETS = ["train_parallel", "train_non_parallel", "dev", "eval"]
 
 
@@ -42,6 +44,12 @@ def process_sample(args, _set, sample_id, original_text):
         )
     except Exception as e:
         print(f"Error processing {wav_path}: {e}")
+        return None
+
+    # check duration
+    duration = (end - start) / sr
+    if duration < DURATION_MIN:
+        print(f"Duration too short: {duration:.2f} < {DURATION_MIN} for {sample_id}")
         return None
 
     item = {

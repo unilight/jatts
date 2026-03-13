@@ -18,17 +18,13 @@ verbose=1      # verbosity level (lower is less info)
 n_gpus=1       # number of gpus in training
 n_jobs=16      # number of parallel jobs in feature extraction
 
-accelerate_conf=conf/single-node-1-gpu.yaml
-conf=conf/matcha_tts.mas.v1.yaml
+ar_conf=conf/valle_ar.given.bs128.4gpus.yaml
+nar_conf=conf/valle_nar.given.bs128.4gpus.yaml
 
 # dataset configuration
 # db_root=downloads
-db_root=/data/group1/z44476r/Corpora/hi-fi-captain/ja-JP/female
+db_root=/data/group1/z44476r/Corpora/emilia
 dumpdir=dump                # directory to dump full features
-
-# data preparation related
-julius_clean=false
-create_histogram=false
 
 # text related setting
 token_type="phn"
@@ -52,12 +48,13 @@ resume=""  # checkpoint path to resume training
 outdir=                     # In case not evaluation not executed together with decoding & synthesis stage
 voc=PWG                     # vocoder used (GL or PWG)
 griffin_lim_iters=64        # number of iterations of Griffin-Lim
-checkpoint=""               # checkpoint path to be used for decoding
+ar_checkpoint=""               # checkpoint path to be used for decoding
+nar_checkpoint=""              # checkpoint path to be used for decoding
                             # if not provided, the latest one will be used
                             # (e.g. <path>/<to>/checkpoint-400000steps.pkl)
 
 # evaluation related setting
-eval_metrics="mcd sheet asr"
+eval_metrics="mcd sheet spkemb asr"
 
 # shellcheck disable=SC1091
 . utils/parse_options.sh || exit 1;
@@ -65,8 +62,8 @@ eval_metrics="mcd sheet asr"
 set -euo pipefail
 
 train_set="train"
-dev_set="dev"
-test_set="test"
+dev_set="dev_with_prompt"
+test_set="test_parallel_with_ref"
 
 token_listdir="${dumpdir}/token_list/${train_set}_${token_type}"
 if [ "${cleaner}" != none ]; then
@@ -85,13 +82,20 @@ if [ ${stage} -le 0 ] && [ ${stop_stage} -ge 0 ]; then
 
     mkdir -p "data"
 
-    log "Making csv files"
-    python local/data_prep.py \
-        --train_set "${train_set}" \
-        --dev_set "${dev_set}" \
-        --test_set "${test_set}" \
+    # # make train only
+    # log "Making csv files"
+    # python local/data_prep.py \
+    #     --db_root "${db_root}" \
+    #     --out "data/train.csv"
+
+    python local/add_text.py \
+        --in_csv "data/.backup/train.csv" \
         --db_root "${db_root}" \
-        --outdir "data"
+        --out "data/train.csv"
+    python local/add_text.py \
+        --in_csv "data/.backup/train_raw_feat.csv" \
+        --db_root "${db_root}" \
+        --out "data/${train_set}_raw_feat.csv"
 fi
 
 if [ "${stage}" -le 1 ] && [ "${stop_stage}" -ge 1 ]; then
@@ -111,10 +115,9 @@ if [ "${stage}" -le 1 ] && [ "${stop_stage}" -ge 1 ]; then
         log "Feature extraction start. See the progress via ${dumpdir}/${name}/preprocessing.*.log."
         ${train_cmd} JOB=1:${n_jobs} "${dumpdir}/${name}/preprocessing.JOB.log" \
             preprocess.py \
-                --config "${conf}" \
+                --config "${ar_conf}" \
                 --csv "${dumpdir}/${name}/csvs/${name}.JOB.csv" \
                 --dumpdir "${dumpdir}/${name}/feats" \
-                --f0_path "conf/f0.yaml" \
                 --verbose "${verbose}"
         log "Successfully finished feature extraction of ${name} set."
     ) &
@@ -126,16 +129,6 @@ if [ "${stage}" -le 1 ] && [ "${stop_stage}" -ge 1 ]; then
 
     utils/combine_csv.py --csv_dir "${dumpdir}/${train_set}/csvs" --out "data/${train_set}_raw_feat.csv"
     utils/combine_csv.py --csv_dir "${dumpdir}/${dev_set}/csvs" --out "data/${dev_set}_raw_feat.csv"
-
-    # calculate statistics for normalization
-    log "Statistics computation start. See the progress via ${dumpdir}/${train_set}/compute_statistics.log."
-    ${train_cmd} "${dumpdir}/${train_set}/compute_statistics.log" \
-        compute_statistics.py \
-            --csv "data/${train_set}_raw_feat.csv" \
-            --out "${dumpdir}/${train_set}/stats.h5" \
-            --verbose "${verbose}"
-    log "Successfully finished calculation of statistics."
-
 fi
 
 if [ "${stage}" -le 2 ] && [ "${stop_stage}" -ge 2 ]; then
@@ -155,52 +148,91 @@ if [ "${stage}" -le 2 ] && [ "${stop_stage}" -ge 2 ]; then
 fi
 
 if [ -z ${tag} ]; then
-    expname=${train_set}_${token_type}_${cleaner}_$(basename ${conf%.*})
+    expname=${train_set}_${token_type}_${cleaner}_$(basename ${ar_conf%.*})
 else
     expname=${train_set}_${token_type}_${cleaner}_${tag}
 fi
-expdir=exp/${expname}
+ar_expdir=exp/${expname}
 if [ "${stage}" -le 3 ] && [ "${stop_stage}" -ge 3 ]; then
-    log "Stage 3: Network training"
+    log "Stage 3: VALL-E: AR Network training"
 
-    [ ! -e "${expdir}" ] && mkdir -p "${expdir}"
-    cp "${dumpdir}/${train_set}/stats.h5" "${expdir}/"
-    cp "${token_list}" "${expdir}/tokens.txt"
+    [ ! -e "${ar_expdir}" ] && mkdir -p "${ar_expdir}"
+    cp "${token_list}" "${ar_expdir}/tokens.txt"
 
-    log "Training start. See the progress via ${expdir}/train.log."
-    VENV_PYTHON="$MAIN_ROOT/tools/venv/bin/python"
-    ${cuda_cmd} --gpu "${n_gpus}" "${expdir}/train.log" \
-    $VENV_PYTHON -m accelerate.commands.launch --config_file "${accelerate_conf}" ../../../jatts/bin/tts_train.py \
-            --config "${conf}" \
+    # multi-gpu training
+    if [ "${n_gpus}" -gt 1 ]; then
+        train="torchrun --nnodes=1 --nproc_per_node=${n_gpus} ../../../jatts/bin/tts_train.py"
+    else
+        train="tts_train.py"
+    fi
+
+    log "Training start. See the progress via ${ar_expdir}/train.log."
+    ${cuda_cmd} --gpu "${n_gpus}" "${ar_expdir}/train.log" \
+        ${train} \
+            --config "${ar_conf}" \
             --train-csv "data/${train_set}_raw_feat.csv" \
             --dev-csv "data/${dev_set}_raw_feat.csv" \
-            --stats "${expdir}/stats.h5" \
-            --token-list "${expdir}/tokens.txt" \
+            --token-list "${ar_expdir}/tokens.txt" \
             --token-column "${token_column}" \
-            --outdir "${expdir}" \
+            --outdir "${ar_expdir}" \
             --resume "${resume}" \
             --verbose "${verbose}"
     log "Successfully finished training."
 fi
 
+if [ -z ${tag} ]; then
+    expname=${train_set}_${token_type}_${cleaner}_$(basename ${nar_conf%.*})
+else
+    expname=${train_set}_${token_type}_${cleaner}_${tag}
+fi
+nar_expdir=exp/${expname}
 if [ "${stage}" -le 4 ] && [ "${stop_stage}" -ge 4 ]; then
-    log "Stage 4: Network decoding"
+    log "Stage 4: VALL-E: NAR Network training"
+
+    [ ! -e "${nar_expdir}" ] && mkdir -p "${nar_expdir}"
+    cp "${token_list}" "${nar_expdir}/tokens.txt"
+
+    # multi-gpu training
+    if [ "${n_gpus}" -gt 1 ]; then
+        train="torchrun --nnodes=1 --nproc_per_node=${n_gpus} ../../../jatts/bin/tts_train.py"
+    else
+        train="tts_train.py"
+    fi
+
+    log "Training start. See the progress via ${nar_expdir}/train.log."
+    ${cuda_cmd} --gpu "${n_gpus}" "${nar_expdir}/train.log" \
+        ${train} \
+            --config "${nar_conf}" \
+            --train-csv "data/${train_set}_raw_feat.csv" \
+            --dev-csv "data/${dev_set}_raw_feat.csv" \
+            --token-list "${nar_expdir}/tokens.txt" \
+            --token-column "${token_column}" \
+            --outdir "${nar_expdir}" \
+            --resume "${resume}" \
+            --verbose "${verbose}"
+    log "Successfully finished training."
+fi
+
+
+if [ "${stage}" -le 5 ] && [ "${stop_stage}" -ge 5 ]; then
+    log "Stage 5: Network decoding"
 
     # shellcheck disable=SC2012
-    [ -z "${checkpoint}" ] && checkpoint="$(ls -dt "${expdir}"/*.pkl | head -1 || true)"
-    outdir="${expdir}/results/$(basename "${checkpoint}" .pkl)"
+    [ -z "${ar_checkpoint}" ] && ar_checkpoint="$(ls -dt "${ar_expdir}"/*.pkl | head -1 || true)"
+    [ -z "${nar_checkpoint}" ] && nar_checkpoint="$(ls -dt "${nar_expdir}"/*.pkl | head -1 || true)"
+    outdir="${nar_expdir}/results/$(basename "${ar_checkpoint}" .pkl)_$(basename "${nar_checkpoint}" .pkl)"
     pids=()
-    for name in dev_raw_feat "${test_set}"; do
+    for name in "${test_set}"; do
         [ ! -e "${outdir}/${name}" ] && mkdir -p "${outdir}/${name}"
         [ "${n_gpus}" -gt 1 ] && n_gpus=1
         log "Decoding start. See the progress via ${outdir}/${name}/decode.log."
         ${cuda_cmd} --gpu "${n_gpus}" "${outdir}/${name}/decode.log" \
-            tts_decode.py \
+            ttslm_decode.py \
                 --csv "data/${name}.csv" \
-                --stats "${expdir}/stats.h5" \
-                --token-list "${expdir}/tokens.txt" \
+                --token-list "${nar_expdir}/tokens.txt" \
                 --token-column "${token_column}" \
-                --checkpoint "${checkpoint}" \
+                --ar-checkpoint "${ar_checkpoint}" \
+                --nar-checkpoint "${nar_checkpoint}" \
                 --outdir "${outdir}/${name}" \
                 --verbose "${verbose}"
         log "Successfully finished decoding of ${name} set."
@@ -208,11 +240,12 @@ if [ "${stage}" -le 4 ] && [ "${stop_stage}" -ge 4 ]; then
     log "Successfully finished decoding."
 fi
 
-if [ ${stage} -le 5 ] && [ ${stop_stage} -ge 5 ]; then
-    log "stage 5: Objective Evaluation"
+if [ ${stage} -le 6 ] && [ ${stop_stage} -ge 6 ]; then
+    log "stage 6: Objective Evaluation"
 
-    [ -z "${checkpoint}" ] && checkpoint="$(ls -dt "${expdir}"/*.pkl | head -1 || true)"
-    outdir="${expdir}/results/$(basename "${checkpoint}" .pkl)"
+    [ -z "${ar_checkpoint}" ] && ar_checkpoint="$(ls -dt "${ar_expdir}"/*.pkl | head -1 || true)"
+    [ -z "${nar_checkpoint}" ] && nar_checkpoint="$(ls -dt "${nar_expdir}"/*.pkl | head -1 || true)"
+    outdir="${nar_expdir}/results/$(basename "${ar_checkpoint}" .pkl)_$(basename "${nar_checkpoint}" .pkl)"
     for name in "${test_set}"; do
         wavdir="${outdir}/${name}/wav"
         log "Evaluation start. See the progress via ${outdir}/${name}/evaluation.log."
